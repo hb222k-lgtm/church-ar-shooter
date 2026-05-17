@@ -109,8 +109,8 @@ function buildPreviewChar(c) {
   // Eyebrows
   const browMat = mat(c.hairColor, 0.9);
   [-0.11, 0.11].forEach(x => {
-    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.025, 0.03), browMat);
-    brow.position.set(x, 0.16, 0.27); headG.add(brow);
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.094, 0.019, 0.026), browMat);
+    brow.position.set(x, 0.165, 0.275); brow.rotation.z = x > 0 ? -0.12 : 0.12; headG.add(brow);
   });
 
   // Mouth (smile)
@@ -121,6 +121,15 @@ function buildPreviewChar(c) {
   // Nose
   const nose = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 8), skinMat);
   nose.position.set(0, 0, 0.3); nose.scale.set(1, 0.7, 0.5); headG.add(nose);
+
+  // Ears
+  [-1, 1].forEach(side => {
+    const outer = new THREE.Mesh(new THREE.SphereGeometry(0.068, 10, 8), skinMat);
+    outer.scale.set(0.52, 0.74, 0.36); outer.position.set(side * 0.29, 0.02, 0); headG.add(outer);
+    const inner = new THREE.Mesh(new THREE.SphereGeometry(0.042, 8, 6),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(c.skinColor).multiplyScalar(0.85), roughness: 0.8 }));
+    inner.scale.set(0.44, 0.60, 0.28); inner.position.set(side * 0.302, 0.02, 0.008); headG.add(inner);
+  });
 
   // Hair
   addHair3D(headG, c.hairStyle, c.hairColor);
@@ -228,46 +237,64 @@ function addAccessory3D(g, headG, acc, color) {
   }
 }
 
-function addWeapon3D(armG, weapon) {
-  const wMat = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.4, metalness: 0.7 });
-  const acMat = new THREE.MeshStandardMaterial({ color: 0xFFAA00, roughness: 0.3, metalness: 0.8 });
+function addWeapon3D(armG, weaponType) {
+  const steel = new THREE.MeshStandardMaterial({ color: 0x1C1C2E, roughness: 0.28, metalness: 0.88 });
+  const poly  = new THREE.MeshStandardMaterial({ color: 0x2D3042, roughness: 0.55, metalness: 0.25 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0xB8860B, roughness: 0.22, metalness: 0.92 });
+  const wood  = new THREE.MeshStandardMaterial({ color: 0x5C3317, roughness: 0.82, metalness: 0.02 });
+  const sc    = new THREE.MeshStandardMaterial({ color: 0x0D1117, roughness: 0.18, metalness: 0.45 });
   const wG = new THREE.Group(); wG.name = 'weapon';
+  function mk(geo, m) { return new THREE.Mesh(geo, m); }
+  function cyl(rt, rb, h, s) { return new THREE.CylinderGeometry(rt, rb, h, s||8); }
+  function box(x, y, z) { return new THREE.BoxGeometry(x, y, z); }
 
-  if (weapon === 'pistol') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.26), wMat);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.22, 8), wMat);
-    barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.22;
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 0.1), wMat);
-    grip.position.set(0, -0.14, 0.02); grip.rotation.x = 0.2;
-    wG.add(body); wG.add(barrel); wG.add(grip);
-  } else if (weapon === 'shotgun') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.5), wMat);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 8), wMat);
-    barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.5;
-    wG.add(body); wG.add(barrel);
-  } else if (weapon === 'rifle') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.6), wMat);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.35, 8), wMat);
-    barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.52;
-    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.08), acMat);
-    mag.position.set(0, -0.14, 0.1);
-    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.24, 8), wMat);
-    scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.1, 0.1);
-    wG.add(body); wG.add(barrel); wG.add(mag); wG.add(scope);
-  } else if (weapon === 'sniper') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.11, 0.8), wMat);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8), wMat);
-    barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.75;
-    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.35, 8), wMat);
-    scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.12, 0.2);
-    wG.add(body); wG.add(barrel); wG.add(scope);
-  } else if (weapon === 'smg') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.36), wMat);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.2, 8), wMat);
-    barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.35;
-    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.06), acMat);
-    mag.position.set(0, -0.15, 0.08);
-    wG.add(body); wG.add(barrel); wG.add(mag);
+  if (weaponType === 'pistol') {
+    const slide = mk(box(0.066, 0.088, 0.21), steel); slide.position.set(0, 0.022, 0.055); wG.add(slide);
+    const frame = mk(box(0.06,  0.065, 0.17), poly);  frame.position.set(0, -0.032, 0.04); wG.add(frame);
+    const barrel = mk(cyl(0.017, 0.017, 0.22), steel); barrel.rotation.x = Math.PI/2; barrel.position.set(0, 0.022, 0.21); wG.add(barrel);
+    const grip = mk(box(0.055, 0.21, 0.09), poly); grip.position.set(0, -0.135, -0.024); grip.rotation.x = 0.18; wG.add(grip);
+    const tg = mk(new THREE.TorusGeometry(0.038, 0.009, 6, 10, Math.PI), steel);
+    tg.position.set(0, -0.038, 0.025); tg.rotation.z = Math.PI; wG.add(tg);
+  } else if (weaponType === 'shotgun') {
+    const recv = mk(box(0.1, 0.1, 0.34), steel); recv.position.set(0, 0, 0.04); wG.add(recv);
+    [-0.032, 0.032].forEach(x => {
+      const b = mk(cyl(0.024, 0.024, 0.56), steel); b.rotation.x = Math.PI/2; b.position.set(x, 0.038, 0.42); wG.add(b);
+    });
+    const pump = mk(cyl(0.062, 0.058, 0.19, 12), wood); pump.rotation.x = Math.PI/2; pump.position.set(0, 0.038, 0.22); wG.add(pump);
+    const stock = mk(box(0.09, 0.1, 0.32), wood); stock.position.set(0, -0.006, -0.28); wG.add(stock);
+    const heel  = mk(box(0.09, 0.13, 0.055), poly); heel.position.set(0, -0.006, -0.46); wG.add(heel);
+    const rib   = mk(box(0.014, 0.01, 0.5), steel); rib.position.set(0, 0.068, 0.14); wG.add(rib);
+  } else if (weaponType === 'rifle') {
+    const lower = mk(box(0.068, 0.1, 0.4), poly);  lower.position.set(0, 0, 0.04); wG.add(lower);
+    const upper = mk(box(0.062, 0.062, 0.42), steel); upper.position.set(0, 0.083, 0.04); wG.add(upper);
+    const barrel = mk(cyl(0.017, 0.017, 0.38), steel); barrel.rotation.x = Math.PI/2; barrel.position.set(0, 0.065, 0.45); wG.add(barrel);
+    const fh = mk(cyl(0.028, 0.02, 0.06, 6), steel); fh.rotation.x = Math.PI/2; fh.position.set(0, 0.065, 0.66); wG.add(fh);
+    const mag = mk(box(0.048, 0.24, 0.08), brass); mag.position.set(0, -0.175, 0.1); mag.rotation.x = -0.12; wG.add(mag);
+    const grip = mk(box(0.058, 0.19, 0.08), poly); grip.position.set(0, -0.115, -0.05); grip.rotation.x = 0.2; wG.add(grip);
+    const stock = mk(box(0.062, 0.088, 0.24), poly); stock.position.set(0, 0.012, -0.22); wG.add(stock);
+    const carry = mk(box(0.038, 0.055, 0.2), steel); carry.position.set(0, 0.148, -0.01); wG.add(carry);
+    const rail  = mk(box(0.022, 0.015, 0.38), steel); rail.position.set(0, 0.117, 0.04); wG.add(rail);
+  } else if (weaponType === 'sniper') {
+    const body   = mk(box(0.068, 0.11, 0.52), steel); body.position.set(0, 0, 0.06); wG.add(body);
+    const barrel = mk(cyl(0.015, 0.017, 0.68), steel); barrel.rotation.x = Math.PI/2; barrel.position.set(0, 0.038, 0.66); wG.add(barrel);
+    const mb = mk(box(0.048, 0.044, 0.072), steel); mb.position.set(0, 0.038, 1.03); wG.add(mb);
+    const scp = mk(cyl(0.038, 0.038, 0.44, 12), sc); scp.rotation.x = Math.PI/2; scp.position.set(0, 0.132, 0.18); wG.add(scp);
+    [-0.23, 0.23].forEach(z => {
+      const cap = mk(cyl(0.041, 0.038, 0.04, 12), steel); cap.rotation.x = Math.PI/2; cap.position.set(0, 0.132, 0.18 + z); wG.add(cap);
+    });
+    const grip  = mk(box(0.058, 0.2, 0.08), poly); grip.position.set(0, -0.12, -0.005); grip.rotation.x = 0.15; wG.add(grip);
+    const stock = mk(box(0.068, 0.13, 0.31), poly); stock.position.set(0, -0.008, -0.24); wG.add(stock);
+    [-0.058, 0.058].forEach((x, i) => {
+      const leg = mk(cyl(0.007, 0.006, 0.24, 6), steel); leg.position.set(x, -0.1, 0.56); leg.rotation.z = i === 0 ? -0.32 : 0.32; wG.add(leg);
+    });
+  } else if (weaponType === 'smg') {
+    const recv  = mk(box(0.08, 0.1, 0.31), steel);  recv.position.set(0, 0, 0.04); wG.add(recv);
+    const barrel = mk(cyl(0.019, 0.019, 0.24), steel); barrel.rotation.x = Math.PI/2; barrel.position.set(0, 0.018, 0.32); wG.add(barrel);
+    const mc = mk(cyl(0.027, 0.023, 0.052, 8), steel); mc.rotation.x = Math.PI/2; mc.position.set(0, 0.018, 0.46); wG.add(mc);
+    const mag  = mk(box(0.048, 0.28, 0.056), brass); mag.position.set(0, -0.19, 0.08); wG.add(mag);
+    const grip = mk(box(0.06, 0.18, 0.078), poly); grip.position.set(0, -0.1, -0.065); grip.rotation.x = 0.15; wG.add(grip);
+    const stockB = mk(box(0.078, 0.038, 0.22), steel); stockB.position.set(0, 0.058, -0.145); wG.add(stockB);
+    const fg   = mk(cyl(0.02, 0.018, 0.12, 8), poly); fg.position.set(0, -0.062, 0.22); wG.add(fg);
   }
 
   wG.rotation.set(-0.3, 0, 0);
@@ -338,17 +365,19 @@ function animatePreview() {
   requestAnimationFrame(animatePreview);
   pTime += 0.016;
   if (pChar) {
-    if (!isDragging) rotY += 0.006;
+    if (!isDragging) rotY += 0.005;
     pChar.rotation.y = rotY;
-    pChar.position.y = Math.sin(pTime * 1.6) * 0.04;
-    // Arms idle swing
+    // Breathing
+    const breathe = Math.sin(pTime * 1.2 * Math.PI * 2) * 0.015;
+    pChar.position.y = breathe;
+    // Arm sway from breathing
     const lArm = pChar.getObjectByName('lArm');
     const rArm = pChar.getObjectByName('rArm');
-    if (lArm) lArm.rotation.x =  Math.sin(pTime * 1.6) * 0.12;
-    if (rArm) rArm.rotation.x = -Math.sin(pTime * 1.6) * 0.12;
+    if (lArm) { lArm.rotation.x = breathe * 1.6 + Math.sin(pTime * 0.8) * 0.04; lArm.rotation.z = 0.12 + Math.sin(pTime * 0.42) * 0.015; }
+    if (rArm) { rArm.rotation.x = -breathe * 1.6 - Math.sin(pTime * 0.8) * 0.04; rArm.rotation.z = -0.12 - Math.sin(pTime * 0.42) * 0.015; }
     // Halo spin
     const halo = pChar.getObjectByName('halo');
-    if (halo) halo.rotation.z = pTime * 1.2;
+    if (halo) halo.rotation.z = pTime * 1.4;
   }
   pRenderer.render(pScene, pCamera);
 }
