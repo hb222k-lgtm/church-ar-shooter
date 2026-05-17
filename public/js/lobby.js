@@ -11,6 +11,25 @@ function toast(msg) {
   setTimeout(() => el.remove(), 3200);
 }
 
+/* ── Difficulty selection ── */
+let selectedDiff = 'easy';
+['easy','normal','hard'].forEach(d => {
+  document.getElementById('diff-' + d).addEventListener('click', () => {
+    selectedDiff = d;
+    ['easy','normal','hard'].forEach(x => document.getElementById('diff-' + x).classList.toggle('selected', x === d));
+  });
+});
+
+/* ── Solo play ── */
+document.getElementById('solo-btn').addEventListener('click', () => {
+  if (!char.name) { location.href = 'index.html'; return; }
+  sessionStorage.setItem('gameMode', 'single');
+  socket.emit('startSingle', {
+    playerData: { name: char.name, character: char, weapon: char.weapon },
+    difficulty: selectedDiff,
+  });
+});
+
 /* ── Mode selection ── */
 let selectedMode = 'ffa';
 document.getElementById('mode-ffa').addEventListener('click', () => selectMode('ffa'));
@@ -91,10 +110,16 @@ socket.on('newHost', ({ hostId }) => {
   if (hostId === myId) { isHost = true; updateHostUI(true); toast('호스트가 되었습니다!'); }
 });
 
-socket.on('gameStarted', ({ players, gameMode: mode }) => {
+socket.on('gameStarted', ({ players, gameMode: mode, wave, totalWaves, difficulty }) => {
   sessionStorage.setItem('players', JSON.stringify(players));
   sessionStorage.setItem('myId', myId);
   sessionStorage.setItem('myTeam', myTeam || '');
+  sessionStorage.setItem('gameMode', mode);
+  if (mode === 'single') {
+    sessionStorage.setItem('wave', wave || 1);
+    sessionStorage.setItem('totalWaves', totalWaves || 5);
+    sessionStorage.setItem('difficulty', difficulty || 'normal');
+  }
   window.location.href = 'game.html';
 });
 

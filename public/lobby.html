@@ -15,6 +15,34 @@
 
   <!-- Screen A: Create or Join -->
   <div id="screen-home" class="scroll-body" style="padding:20px;display:flex;flex-direction:column;gap:12px">
+
+    <!-- Single Player -->
+    <div class="card" style="text-align:center;padding:24px">
+      <div style="font-size:48px;margin-bottom:8px">🤖</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">혼자 하기</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px">AI 봇과 웨이브 서바이벌!</div>
+
+      <div class="mode-grid" style="margin-bottom:16px;grid-template-columns:1fr 1fr 1fr">
+        <div class="mode-card selected" id="diff-easy" data-diff="easy">
+          <div class="mode-icon">🌱</div>
+          <div class="mode-name">쉬움</div>
+          <div class="mode-desc">5웨이브 · 초보봇</div>
+        </div>
+        <div class="mode-card" id="diff-normal" data-diff="normal">
+          <div class="mode-icon">⚡</div>
+          <div class="mode-name">보통</div>
+          <div class="mode-desc">7웨이브 · 일반봇</div>
+        </div>
+        <div class="mode-card" id="diff-hard" data-diff="hard">
+          <div class="mode-icon">💀</div>
+          <div class="mode-name">어려움</div>
+          <div class="mode-desc">10웨이브 · 강력봇</div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="solo-btn">🚀 혼자 시작!</button>
+    </div>
+
     <div class="card" style="text-align:center;padding:24px">
       <div style="font-size:48px;margin-bottom:8px">🏠</div>
       <div style="font-size:18px;font-weight:700;margin-bottom:4px">방 만들기</div>

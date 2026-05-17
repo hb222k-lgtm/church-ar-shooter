@@ -27,6 +27,9 @@ let lastTime     = performance.now();
 const particles  = [];
 let screenShake  = 0;
 
+let currentWave  = parseInt(sessionStorage.getItem('wave') || '1');
+let totalWaves   = parseInt(sessionStorage.getItem('totalWaves') || '5');
+
 const weapon     = charData.weapon || 'pistol';
 const weaponInfo = WEAPONS[weapon];
 
@@ -501,6 +504,22 @@ function initPlayers() {
   currentAmmo = weaponInfo.ammo; maxAmmo = weaponInfo.ammo;
   Object.values(players).forEach(p => { if (p.id !== myId) spawnCharacter(p); });
   if (gameMode === 'team') { document.getElementById('team-hud').style.display = 'flex'; updateTeamCount(); }
+  if (gameMode === 'single') {
+    document.getElementById('wave-hud').style.display = 'block';
+    updateWaveLabel();
+  }
+}
+
+function updateWaveLabel() {
+  document.getElementById('wave-label').textContent = `⚔️ 웨이브 ${currentWave} / ${totalWaves}`;
+}
+
+function showWaveAnnounce(text, sub, duration) {
+  const el = document.getElementById('wave-announce');
+  document.getElementById('wave-announce-text').textContent = text;
+  document.getElementById('wave-announce-sub').textContent = sub || '';
+  el.style.display = 'flex';
+  setTimeout(() => { el.style.display = 'none'; }, duration || 2800);
 }
 
 function spawnCharacter(player) {
@@ -555,10 +574,40 @@ function setupSocket() {
     if (deadId === myId) {
       isAlive = false;
       document.getElementById('shoot-btn').classList.add('disabled');
-      document.getElementById('game-over-overlay').classList.add('show');
+      if (gameMode !== 'single') document.getElementById('game-over-overlay').classList.add('show');
     }
   });
-  socket.on('gameEnded', ({ mode, winnerId, winnerTeam, stats }) => showResult(mode, winnerId, winnerTeam, stats));
+  socket.on('waveCleared', ({ wave, nextWave, total }) => {
+    currentWave = nextWave; totalWaves = total; updateWaveLabel();
+    showWaveAnnounce(`✅ 웨이브 ${wave} 클리어!`, `다음 웨이브까지 잠시 후...`, 3800);
+    toast(`웨이브 ${wave} 격파! 다음: 웨이브 ${nextWave}`);
+  });
+
+  socket.on('waveStarted', ({ wave, players: newPlayers }) => {
+    currentWave = wave; updateWaveLabel();
+    // Remove old bot meshes, spawn new ones
+    Object.keys(characterMeshes).forEach(id => {
+      if (id !== myId && players[id]?.isBot) { scene.remove(characterMeshes[id]); delete characterMeshes[id]; }
+    });
+    players = newPlayers;
+    Object.values(players).forEach(p => { if (p.id !== myId) spawnCharacter(p); });
+    updateTeamCount();
+    showWaveAnnounce(`🌊 웨이브 ${wave} 시작!`, `봇 ${Object.values(newPlayers).filter(p=>p.isBot).length}마리 등장!`, 2500);
+  });
+
+  socket.on('hpRecovered', ({ hp }) => {
+    myHp = hp; updateMyHP();
+    const el = document.createElement('div');
+    el.textContent = '+회복';
+    el.style.cssText = `position:fixed;z-index:12;color:#10B981;font-size:22px;font-weight:900;
+      text-shadow:0 2px 8px rgba(0,0,0,0.8);pointer-events:none;left:44%;top:35%;
+      animation:floatUp 1s forwards`;
+    document.getElementById('game-page').appendChild(el);
+    setTimeout(() => el.remove(), 1100);
+  });
+
+  socket.on('gameEnded', ({ mode, winnerId, winnerTeam, stats, victory, wave }) =>
+    showResult(mode, winnerId, winnerTeam, stats, victory, wave));
 }
 
 /* ══════════════ CONTROLS ══════════════ */
@@ -710,23 +759,40 @@ function addKillFeed(killer, dead) {
 }
 
 /* ══════════════ RESULT ══════════════ */
-function showResult(mode, winnerId, winnerTeam, stats) {
+function showResult(mode, winnerId, winnerTeam, stats, victory, wave) {
   const overlay = document.getElementById('game-result-overlay'); overlay.classList.add('show');
   const title = document.getElementById('result-title');
-  if (mode === 'ffa') {
+  if (mode === 'single') {
+    if (victory) {
+      title.innerHTML = `🏆 <span style="color:#F59E0B">완전 클리어!</span><br><small style="font-size:16px;font-weight:400">웨이브 ${wave} 전부 격파!</small>`;
+    } else {
+      title.innerHTML = `💀 <span style="color:#EF4444">게임 오버</span><br><small style="font-size:16px;font-weight:400">웨이브 ${wave}에서 쓰러짐</small>`;
+    }
+    document.getElementById('result-table').innerHTML = `
+      <tr><th>플레이어</th><th>킬</th><th>도달 웨이브</th></tr>
+      ${(stats||[]).map(s => `<tr>
+        <td>${esc(s.name)}${s.id===myId?' <small style="color:var(--primary-light)">(나)</small>':''}</td>
+        <td>${s.kills}</td><td>${wave}</td></tr>`).join('')}`;
+  } else if (mode === 'ffa') {
     const w = stats.find(s => s.id === winnerId);
     title.innerHTML = winnerId === myId ? '🏆 <span style="color:#F59E0B">우승!</span>' : `🏆 ${esc(w?.name||'?')} 우승!`;
+    document.getElementById('result-table').innerHTML = `
+      <tr><th>플레이어</th><th>킬</th><th>결과</th></tr>
+      ${stats.sort((a,b)=>b.kills-a.kills).map(s=>`
+      <tr class="${s.id===winnerId?'winner':''}">
+        <td>${esc(s.name)}${s.id===myId?' <small style="color:var(--primary-light)">(나)</small>':''}</td>
+        <td>${s.kills}</td><td>${s.alive?'✅':'💀'}</td></tr>`).join('')}`;
   } else {
     title.innerHTML = myTeam === winnerTeam ? '🏆 <span style="color:#F59E0B">팀 승리!</span>'
       : `🏆 ${winnerTeam==='red'?'🔴 레드팀':'🔵 블루팀'} 승리!`;
+    document.getElementById('result-table').innerHTML = `
+      <tr><th>플레이어</th><th>팀</th><th>킬</th><th>결과</th></tr>
+      ${stats.sort((a,b)=>b.kills-a.kills).map(s=>`
+      <tr class="${s.id===winnerId?'winner':''}">
+        <td>${esc(s.name)}${s.id===myId?' <small style="color:var(--primary-light)">(나)</small>':''}</td>
+        <td>${s.team==='red'?'🔴':'🔵'}</td>
+        <td>${s.kills}</td><td>${s.alive?'✅':'💀'}</td></tr>`).join('')}`;
   }
-  document.getElementById('result-table').innerHTML = `
-    <tr><th>플레이어</th>${mode==='team'?'<th>팀</th>':''}<th>킬</th><th>결과</th></tr>
-    ${stats.sort((a,b)=>b.kills-a.kills).map(s=>`
-    <tr class="${s.id===winnerId?'winner':''}">
-      <td>${esc(s.name)}${s.id===myId?' <small style="color:var(--primary-light)">(나)</small>':''}</td>
-      ${mode==='team'?`<td>${s.team==='red'?'🔴':'🔵'}</td>`:''}
-      <td>${s.kills}</td><td>${s.alive?'✅':'💀'}</td></tr>`).join('')}`;
 }
 
 /* ══════════════ MAIN LOOP ══════════════ */

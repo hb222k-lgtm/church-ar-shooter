@@ -16,6 +16,13 @@
   <!-- Compass direction bar -->
   <div id="compass-bar">N</div>
 
+  <!-- Wave HUD (shown in single mode) -->
+  <div id="wave-hud" style="display:none;position:absolute;top:14px;left:50%;transform:translateX(-50%);
+    background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.15);
+    border-radius:20px;padding:6px 18px;font-size:15px;font-weight:700;color:#fff;z-index:8;white-space:nowrap">
+    <span id="wave-label">웨이브 1 / 5</span>
+  </div>
+
   <!-- Team HUD (shown in team mode) -->
   <div id="team-hud" style="display:none">
     <span class="team-count-red">🔴 <span id="red-count">?</span></span>
@@ -73,6 +80,14 @@
       <button class="btn btn-secondary" onclick="location.href='lobby.html'">로비</button>
       <button class="btn btn-primary" onclick="location.href='index.html'">처음부터</button>
     </div>
+  </div>
+
+  <!-- Wave announcement overlay -->
+  <div id="wave-announce" style="display:none;position:absolute;inset:0;z-index:30;pointer-events:none;
+    display:none;flex-direction:column;align-items:center;justify-content:center;gap:8px">
+    <div id="wave-announce-text" style="font-size:36px;font-weight:900;color:#fff;
+      text-shadow:0 0 40px rgba(124,58,237,0.9);letter-spacing:2px"></div>
+    <div id="wave-announce-sub" style="font-size:16px;color:rgba(255,255,255,0.7)"></div>
   </div>
 
   <!-- Permission prompt (iOS) -->
