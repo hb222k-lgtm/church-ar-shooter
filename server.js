@@ -1,7 +1,15 @@
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT:', err);
+  process.exit(1);
+});
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+
+console.log('서버 초기화 시작...');
+console.log('PORT:', process.env.PORT);
 
 const app = express();
 const server = http.createServer(app);
