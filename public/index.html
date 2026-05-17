@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Church AR Shooter</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  #name-section { padding: 20px 20px 0; }
+  #char-preview-wrap canvas { image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<div class="page" id="creator-page">
+  <div class="page-header">
+    <h1>⚔️ <span class="gradient-text">Church AR Shooter</span></h1>
+    <p>나만의 캐릭터를 만들어 보세요</p>
+  </div>
+
+  <div class="scroll-body">
+    <!-- Name -->
+    <div id="name-section" class="section">
+      <label>닉네임</label>
+      <input type="text" id="name-input" placeholder="이름을 입력하세요" maxlength="10">
+    </div>
+
+    <!-- Character Preview -->
+    <div id="char-preview-wrap">
+      <canvas id="char-canvas" width="160" height="220"></canvas>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="skin">피부/머리</button>
+      <button class="tab-btn" data-tab="outfit">의상</button>
+      <button class="tab-btn" data-tab="accessory">악세서리</button>
+      <button class="tab-btn" data-tab="weapon">무기</button>
+    </div>
+
+    <!-- Tab: Skin & Hair -->
+    <div class="tab-panel active" id="tab-skin">
+      <div class="section-title">피부색</div>
+      <div class="color-grid" id="skin-colors"></div>
+      <div class="section-title" style="margin-top:16px">머리 스타일</div>
+      <div class="style-grid" id="hair-styles"></div>
+      <div class="section-title" style="margin-top:16px">머리색</div>
+      <div class="color-grid" id="hair-colors"></div>
+    </div>
+
+    <!-- Tab: Outfit -->
+    <div class="tab-panel" id="tab-outfit">
+      <div class="section-title">상의 색</div>
+      <div class="color-grid" id="shirt-colors"></div>
+      <div class="section-title" style="margin-top:16px">하의 색</div>
+      <div class="color-grid" id="pants-colors"></div>
+    </div>
+
+    <!-- Tab: Accessory -->
+    <div class="tab-panel" id="tab-accessory">
+      <div class="section-title">악세서리</div>
+      <div class="style-grid" id="accessories"></div>
+      <div class="section-title" style="margin-top:16px">악세서리 색</div>
+      <div class="color-grid" id="acc-colors"></div>
+    </div>
+
+    <!-- Tab: Weapon -->
+    <div class="tab-panel" id="tab-weapon">
+      <div class="weapon-list" id="weapon-list"></div>
+    </div>
+  </div>
+
+  <!-- Bottom CTA -->
+  <div class="bottom-action">
+    <button class="btn btn-primary" id="next-btn">다음 → 방 선택</button>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="js/creator.js"></script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Church AR Shooter – 로비</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="page" id="lobby-page">
+  <div class="page-header">
+    <h1>🎮 <span class="gradient-text">게임 로비</span></h1>
+    <p id="header-sub">방을 만들거나 참가하세요</p>
+  </div>
+
+  <!-- Screen A: Create or Join -->
+  <div id="screen-home" class="scroll-body" style="padding:20px;display:flex;flex-direction:column;gap:12px">
+    <div class="card" style="text-align:center;padding:24px">
+      <div style="font-size:48px;margin-bottom:8px">🏠</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">방 만들기</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px">새로운 방을 만들고 친구를 초대하세요</div>
+
+      <div class="mode-grid" style="margin-bottom:16px">
+        <div class="mode-card selected" id="mode-ffa">
+          <div class="mode-icon">⚔️</div>
+          <div class="mode-name">개인전</div>
+          <div class="mode-desc">모두가 적! 최후의 1인</div>
+        </div>
+        <div class="mode-card" id="mode-team">
+          <div class="mode-icon">🛡️</div>
+          <div class="mode-name">팀전</div>
+          <div class="mode-desc">레드 vs 블루</div>
+        </div>
+      </div>
+
+      <label style="margin-bottom:6px;display:block">최대 인원</label>
+      <input type="number" id="max-players" value="10" min="2" max="20" style="margin-bottom:16px">
+
+      <button class="btn btn-primary" id="create-btn">방 만들기</button>
+    </div>
+
+    <div class="card" style="text-align:center;padding:24px">
+      <div style="font-size:48px;margin-bottom:8px">🔑</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:12px">방 참가</div>
+      <input type="text" id="join-code" placeholder="방 코드 6자리 입력" maxlength="6"
+        style="text-transform:uppercase;text-align:center;font-size:22px;letter-spacing:6px;margin-bottom:12px">
+      <button class="btn btn-secondary" id="join-btn">참가하기</button>
+    </div>
+  </div>
+
+  <!-- Screen B: Room Lobby -->
+  <div id="screen-room" class="scroll-body" style="display:none;padding:20px;padding-bottom:110px">
+    <div class="room-code-display" style="margin-bottom:16px">
+      <div class="label">방 코드 (친구에게 공유)</div>
+      <div class="room-code" id="display-code">------</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:6px">탭하면 복사</div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="section-title" style="margin:0">모드</div>
+        <div id="mode-badge" style="font-size:13px;font-weight:700;color:var(--primary-light)"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:13px;color:rgba(255,255,255,0.5)">대기 중인 플레이어</div>
+        <div id="player-count" style="font-size:13px;font-weight:700"></div>
+      </div>
+    </div>
+
+    <div class="section-title">플레이어</div>
+    <div class="player-list" id="player-list"></div>
+  </div>
+</div>
+
+<!-- Bottom action -->
+<div class="bottom-action" id="room-action" style="display:none">
+  <div style="display:flex;gap:10px">
+    <button class="btn btn-secondary btn-sm" id="leave-btn" style="width:auto;padding:16px 20px">나가기</button>
+    <button class="btn btn-green" id="start-btn" style="display:none">게임 시작!</button>
+    <div id="wait-msg" class="btn btn-secondary" style="opacity:0.5;cursor:default">호스트 대기 중...</div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="js/lobby.js"></script>
+</body>
+</html>

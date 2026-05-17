@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Church AR Shooter – Game</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body style="overflow:hidden">
+
+<div id="game-page">
+  <!-- Camera + AR -->
+  <video id="camera-feed" autoplay playsinline muted></video>
+  <canvas id="ar-canvas"></canvas>
+
+  <!-- Compass direction bar -->
+  <div id="compass-bar">N</div>
+
+  <!-- Team HUD (shown in team mode) -->
+  <div id="team-hud" style="display:none">
+    <span class="team-count-red">🔴 <span id="red-count">?</span></span>
+    <span style="color:rgba(255,255,255,0.4)">vs</span>
+    <span class="team-count-blue">🔵 <span id="blue-count">?</span></span>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="hud-top">
+      <!-- HP -->
+      <div class="hud-hp-wrap">
+        <div class="hud-hp-label">HP</div>
+        <div class="hud-hp-bar"><div class="hud-hp-fill" id="hp-fill" style="width:100%;background:#10B981"></div></div>
+        <div class="hud-hp-num" id="hp-num">100</div>
+      </div>
+      <!-- Ammo -->
+      <div class="hud-ammo">
+        <div class="ammo-weapon" id="ammo-weapon-name">권총</div>
+        <div><span class="ammo-current" id="ammo-cur">12</span><span class="ammo-max" id="ammo-max"> / 12</span></div>
+      </div>
+    </div>
+
+    <!-- Crosshair -->
+    <div id="hud-mid">
+      <div id="crosshair"><div class="dot"></div></div>
+    </div>
+
+    <!-- Bottom controls -->
+    <div id="hud-bottom">
+      <div id="radar"></div>
+      <button id="shoot-btn">🔫</button>
+      <button id="reload-btn">재장전</button>
+    </div>
+  </div>
+
+  <!-- Kill feed -->
+  <div id="kill-feed"></div>
+
+  <!-- Hit flash overlay -->
+  <div id="hit-flash"></div>
+
+  <!-- Game Over overlay -->
+  <div id="game-over-overlay">
+    <div class="game-over-text">💀 사망</div>
+    <div style="font-size:16px;color:rgba(255,255,255,0.6);margin:12px 0 24px">관전 중...</div>
+    <button class="btn btn-secondary" onclick="location.href='lobby.html'" style="max-width:200px">로비로 돌아가기</button>
+  </div>
+
+  <!-- Game Result overlay -->
+  <div id="game-result-overlay">
+    <div class="result-title" id="result-title">게임 종료!</div>
+    <table class="result-table" id="result-table"></table>
+    <div style="display:flex;gap:10px;margin-top:24px;width:100%">
+      <button class="btn btn-secondary" onclick="location.href='lobby.html'">로비</button>
+      <button class="btn btn-primary" onclick="location.href='index.html'">처음부터</button>
+    </div>
+  </div>
+
+  <!-- Permission prompt (iOS) -->
+  <div id="perm-overlay" style="position:absolute;inset:0;z-index:50;background:rgba(0,0,0,0.9);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;gap:16px">
+    <div style="font-size:48px">📱</div>
+    <div style="font-size:20px;font-weight:700;text-align:center">게임 시작 준비</div>
+    <div style="font-size:14px;color:rgba(255,255,255,0.6);text-align:center;line-height:1.6">
+      AR 슈팅 게임은 카메라와 나침반이 필요합니다.<br>아래 버튼을 눌러 권한을 허용해주세요.
+    </div>
+    <button class="btn btn-primary" id="start-perm-btn" style="max-width:280px">🚀 게임 시작!</button>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
