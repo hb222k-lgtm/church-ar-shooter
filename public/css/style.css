@@ -285,16 +285,109 @@ label { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.6); margin-
 }
 
 #radar {
-  width: 90px; height: 90px; border-radius: 50%;
-  background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2);
+  width: 116px; height: 116px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,22,10,0.94) 0%, rgba(0,8,4,0.97) 100%);
+  border: 1.5px solid rgba(0,255,80,0.28);
   position: relative; overflow: hidden;
-  backdrop-filter: blur(4px);
+  box-shadow: 0 0 18px rgba(0,255,80,0.12), inset 0 0 24px rgba(0,0,0,0.6);
 }
+/* Concentric range rings */
+#radar::before {
+  content: '';
+  position: absolute; inset: 0; border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 31.5%, rgba(0,255,80,0.09) 32.5%, transparent 33.5%),
+    radial-gradient(circle at 50% 50%, transparent 64.5%, rgba(0,255,80,0.09) 65.5%, transparent 66.5%);
+  pointer-events: none; z-index: 0;
+}
+/* Cross hairs */
+#radar::after {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(to right, transparent 49.3%, rgba(0,255,80,0.1) 50%, transparent 50.7%),
+    linear-gradient(to bottom, transparent 49.3%, rgba(0,255,80,0.1) 50%, transparent 50.7%);
+  pointer-events: none; z-index: 0;
+}
+/* Sweep wake (fading conic glow) */
+#radar-wake {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(0,255,80,0.0) 0deg,
+    rgba(0,255,80,0.07) 52deg,
+    rgba(0,255,80,0.0) 62deg
+  );
+  animation: radarSpin 3.2s linear infinite;
+  z-index: 1;
+}
+/* Sweep line */
+#radar-sweep {
+  position: absolute;
+  width: 55px; height: 1.5px;
+  top: calc(50% - 0.75px); left: 50%;
+  background: linear-gradient(to right, rgba(0,255,80,1), rgba(0,255,80,0.05));
+  transform-origin: 0 50%;
+  animation: radarSpin 3.2s linear infinite;
+  box-shadow: 0 0 5px rgba(0,255,80,0.85);
+  z-index: 2;
+}
+@keyframes radarSpin { to { transform: rotate(360deg); } }
+
 .radar-dot {
-  position: absolute; width: 8px; height: 8px;
-  border-radius: 50%; transform: translate(-50%,-50%);
+  position: absolute; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: left 0.11s ease-out, top 0.11s ease-out;
+  pointer-events: none;
 }
-.radar-me { background: var(--green); left: 50%; top: 50%; }
+.radar-me {
+  width: 11px; height: 11px;
+  background: #22C55E;
+  left: 50%; top: 50%;
+  box-shadow: 0 0 10px #22C55E, 0 0 20px rgba(34,197,94,0.4);
+  z-index: 4;
+  animation: radarMePulse 2s ease-in-out infinite;
+}
+@keyframes radarMePulse {
+  0%,100% { box-shadow: 0 0 8px #22C55E, 0 0 16px rgba(34,197,94,0.3); }
+  50%      { box-shadow: 0 0 14px #22C55E, 0 0 28px rgba(34,197,94,0.55); }
+}
+.radar-enemy {
+  width: 7px; height: 7px;
+  background: #EF4444;
+  box-shadow: 0 0 7px rgba(239,68,68,0.9);
+  z-index: 3;
+}
+.radar-ally {
+  width: 7px; height: 7px;
+  background: #60A5FA;
+  box-shadow: 0 0 7px rgba(96,165,250,0.9);
+  z-index: 3;
+}
+/* Direction arrow for off-screen enemies (triangle shape) */
+.radar-arrow {
+  width: 0; height: 0;
+  background: none !important;
+  box-shadow: none !important;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 8px solid #EF4444;
+  border-radius: 0;
+  transform-origin: center center;
+  z-index: 3;
+}
+@keyframes radarPing {
+  0%   { transform: translate(-50%,-50%) scale(1);   opacity: 1; }
+  60%  { transform: translate(-50%,-50%) scale(3.0); opacity: 0.0; }
+  100% { transform: translate(-50%,-50%) scale(1);   opacity: 0; }
+}
+.radar-ping-ring {
+  position: absolute; border-radius: 50%;
+  width: 7px; height: 7px;
+  border: 1.5px solid #EF4444;
+  animation: radarPing 0.55s ease-out forwards;
+  pointer-events: none; z-index: 5;
+}
 
 #compass-bar {
   position: absolute; top: 44px; left: 50%; transform: translateX(-50%);

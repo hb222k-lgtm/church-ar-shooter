@@ -35,6 +35,7 @@ const weaponInfo = WEAPONS[weapon];
 
 let scene, camera, renderer;
 const characterMeshes = {};
+const radarDots = {};
 
 /* ══════════════ BOOT ══════════════ */
 document.getElementById('start-perm-btn').addEventListener('click', startGame);
@@ -843,9 +844,15 @@ function updateCharacters(dt) {
 function initHUD() {
   document.getElementById('ammo-weapon-name').textContent = weaponInfo.name;
   updateAmmoHUD(); updateMyHP();
-  const dot = document.createElement('div');
-  dot.className = 'radar-dot radar-me';
-  document.getElementById('radar').appendChild(dot);
+
+  const radar = document.getElementById('radar');
+  // Sweep wake + line (CSS animated)
+  const wake  = document.createElement('div'); wake.id  = 'radar-wake';  radar.appendChild(wake);
+  const sweep = document.createElement('div'); sweep.id = 'radar-sweep'; radar.appendChild(sweep);
+  // Me dot (always on top)
+  const me = document.createElement('div');
+  me.className = 'radar-dot radar-me'; me.id = 'radar-me-dot';
+  radar.appendChild(me);
 }
 
 function updateMyHP() {
@@ -867,17 +874,48 @@ function updateTeamCount() {
 }
 function updateRadar(alive) {
   const radar = document.getElementById('radar');
-  radar.querySelectorAll('.radar-enemy').forEach(e => e.remove());
-  const R = 34;
+  const CX = 58, CY = 58, R = 46; // center 58px (half of 116px), dot radius 46px
+
+  const aliveSet = new Set(alive.map(p => p.id));
+
+  // Remove dots for players no longer alive / left game
+  Object.keys(radarDots).forEach(id => {
+    if (!aliveSet.has(id)) {
+      radarDots[id]?.remove();
+      delete radarDots[id];
+    }
+  });
+
   alive.forEach(p => {
     if (p.id === myId) return;
-    const a = getScreenAngle(p) * Math.PI / 180;
-    const dot = document.createElement('div');
-    dot.className = 'radar-dot radar-enemy';
-    dot.style.background = (gameMode !== 'team' || p.team !== myTeam) ? '#EF4444' : '#3B82F6';
-    dot.style.left = (45 + Math.sin(a)*R) + 'px';
-    dot.style.top  = (45 - Math.cos(a)*R) + 'px';
-    radar.appendChild(dot);
+    const isEnemy = gameMode !== 'team' || p.team !== myTeam;
+    const angle   = getScreenAngle(p) * Math.PI / 180;
+
+    // Clamp to edge if angle > 85° (character off screen — show at radar edge)
+    const edgeR = R;
+    const x = CX + Math.sin(angle) * edgeR;
+    const y = CY - Math.cos(angle) * edgeR;
+
+    if (!radarDots[p.id]) {
+      // New dot: create persistent element + ping ring
+      const dot = document.createElement('div');
+      dot.className = `radar-dot ${isEnemy ? 'radar-enemy' : 'radar-ally'}`;
+      radar.insertBefore(dot, document.getElementById('radar-me-dot'));
+      radarDots[p.id] = dot;
+
+      // Ping ring animation
+      const ring = document.createElement('div');
+      ring.className = 'radar-ping-ring';
+      ring.style.left = x + 'px';
+      ring.style.top  = y + 'px';
+      ring.style.borderColor = isEnemy ? '#EF4444' : '#60A5FA';
+      radar.appendChild(ring);
+      setTimeout(() => ring.remove(), 580);
+    }
+
+    // Smooth position update (CSS transition handles the animation)
+    radarDots[p.id].style.left = x + 'px';
+    radarDots[p.id].style.top  = y + 'px';
   });
 }
 
