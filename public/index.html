@@ -6,8 +6,25 @@
 <title>Church AR Shooter</title>
 <link rel="stylesheet" href="css/style.css">
 <style>
-  #name-section { padding: 20px 20px 0; }
-  #char-preview-wrap canvas { image-rendering: pixelated; }
+#char-preview-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px 0 8px;
+  background: radial-gradient(ellipse at 50% 80%, rgba(124,58,237,0.25) 0%, transparent 70%);
+}
+#char-canvas-3d {
+  border-radius: 20px;
+  filter: drop-shadow(0 8px 32px rgba(124,58,237,0.4));
+}
+.preview-hint {
+  position: absolute;
+  bottom: 14px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 0.5px;
+}
 </style>
 </head>
 <body>
@@ -19,14 +36,15 @@
 
   <div class="scroll-body">
     <!-- Name -->
-    <div id="name-section" class="section">
+    <div class="section" style="padding-top:16px">
       <label>닉네임</label>
       <input type="text" id="name-input" placeholder="이름을 입력하세요" maxlength="10">
     </div>
 
-    <!-- Character Preview -->
+    <!-- 3D Character Preview -->
     <div id="char-preview-wrap">
-      <canvas id="char-canvas" width="160" height="220"></canvas>
+      <canvas id="char-canvas-3d" width="220" height="300"></canvas>
+      <div class="preview-hint">드래그하여 회전</div>
     </div>
 
     <!-- Tabs -->
@@ -37,7 +55,6 @@
       <button class="tab-btn" data-tab="weapon">무기</button>
     </div>
 
-    <!-- Tab: Skin & Hair -->
     <div class="tab-panel active" id="tab-skin">
       <div class="section-title">피부색</div>
       <div class="color-grid" id="skin-colors"></div>
@@ -47,7 +64,6 @@
       <div class="color-grid" id="hair-colors"></div>
     </div>
 
-    <!-- Tab: Outfit -->
     <div class="tab-panel" id="tab-outfit">
       <div class="section-title">상의 색</div>
       <div class="color-grid" id="shirt-colors"></div>
@@ -55,7 +71,6 @@
       <div class="color-grid" id="pants-colors"></div>
     </div>
 
-    <!-- Tab: Accessory -->
     <div class="tab-panel" id="tab-accessory">
       <div class="section-title">악세서리</div>
       <div class="style-grid" id="accessories"></div>
@@ -63,19 +78,18 @@
       <div class="color-grid" id="acc-colors"></div>
     </div>
 
-    <!-- Tab: Weapon -->
     <div class="tab-panel" id="tab-weapon">
       <div class="weapon-list" id="weapon-list"></div>
     </div>
   </div>
 
-  <!-- Bottom CTA -->
   <div class="bottom-action">
     <button class="btn btn-primary" id="next-btn">다음 → 방 선택</button>
   </div>
 </div>
 
 <div id="toast-container"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="js/creator.js"></script>
 </body>
 </html>

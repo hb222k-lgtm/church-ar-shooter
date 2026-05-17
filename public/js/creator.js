@@ -8,24 +8,355 @@ const ACC_COLORS   = ['#FFD700','#FF6B6B','#4ECDC4','#95E1D3','#FF8B94','#A8E6CF
 const HAIR_STYLES  = ['짧은머리','긴머리','곱슬머리','포니테일','모히칸','대머리'];
 const ACCESSORIES  = ['없음','모자','안경','왕관','후광','마스크'];
 const WEAPON_DATA  = {
-  pistol:  { name:'권총',  icon:'🔫', desc:'균형잡힌 기본 무기', dmg:25, rate:3, range:3, ammo:12 },
-  shotgun: { name:'샷건',  icon:'💥', desc:'근거리 일격필살',    dmg:65, rate:1, range:1, ammo:6  },
+  pistol:  { name:'권총',    icon:'🔫', desc:'균형잡힌 기본 무기',   dmg:25, rate:3, range:3, ammo:12 },
+  shotgun: { name:'샷건',    icon:'💥', desc:'근거리 일격필살',       dmg:65, rate:1, range:1, ammo:6  },
   rifle:   { name:'돌격소총', icon:'🎯', desc:'높은 연사력과 정확도', dmg:30, rate:5, range:4, ammo:30 },
-  sniper:  { name:'저격총', icon:'🏹', desc:'원거리 치명타',      dmg:95, rate:1, range:5, ammo:5  },
-  smg:     { name:'기관단총', icon:'⚡', desc:'최고속 연사력',     dmg:18, rate:5, range:2, ammo:25 },
+  sniper:  { name:'저격총',  icon:'🏹', desc:'원거리 치명타',         dmg:95, rate:1, range:5, ammo:5  },
+  smg:     { name:'기관단총', icon:'⚡', desc:'최고속 연사력',         dmg:18, rate:5, range:2, ammo:25 },
 };
 
 const char = {
-  name: '', skinColor: SKIN_COLORS[0], hairColor: HAIR_COLORS[3],
-  hairStyle: '짧은머리', shirtColor: SHIRT_COLORS[0], pantsColor: PANTS_COLORS[0],
-  accessory: '없음', accColor: ACC_COLORS[0], weapon: 'pistol',
+  name:'', skinColor:SKIN_COLORS[0], hairColor:HAIR_COLORS[3],
+  hairStyle:'짧은머리', shirtColor:SHIRT_COLORS[0], pantsColor:PANTS_COLORS[0],
+  accessory:'없음', accColor:ACC_COLORS[0], weapon:'pistol',
 };
+
+/* ── Three.js 3D preview ── */
+let pScene, pCamera, pRenderer, pChar, pTime = 0;
+let isDragging = false, prevX = 0, rotY = 0;
+
+function hexToThreeColor(hex) {
+  return new THREE.Color(hex);
+}
+
+function mat(color, roughness = 0.7, metalness = 0.1) {
+  return new THREE.MeshStandardMaterial({
+    color: hexToThreeColor(color),
+    roughness, metalness
+  });
+}
+
+function buildPreviewChar(c) {
+  const g = new THREE.Group();
+
+  // Legs
+  const legGeo = new THREE.CylinderGeometry(0.13, 0.11, 0.65, 10);
+  const legMat = mat(c.pantsColor, 0.8);
+  const lLeg = new THREE.Mesh(legGeo, legMat); lLeg.position.set(-0.16,-0.72,0); g.add(lLeg);
+  const rLeg = new THREE.Mesh(legGeo, legMat); rLeg.position.set( 0.16,-0.72,0); g.add(rLeg);
+
+  // Shoes
+  const shoeGeo = new THREE.BoxGeometry(0.22, 0.1, 0.3);
+  const shoeMat = mat('#111122', 0.9);
+  [-0.16, 0.16].forEach(x => {
+    const s = new THREE.Mesh(shoeGeo, shoeMat);
+    s.position.set(x, -1.08, 0.05); g.add(s);
+  });
+
+  // Body
+  const bodyGeo = new THREE.BoxGeometry(0.62, 0.75, 0.32);
+  bodyGeo.translate(0, 0, 0);
+  const body = new THREE.Mesh(bodyGeo, mat(c.shirtColor, 0.75));
+  body.position.set(0, -0.02, 0); g.add(body);
+
+  // Collar
+  const collarGeo = new THREE.CylinderGeometry(0.12, 0.14, 0.12, 10);
+  const collar = new THREE.Mesh(collarGeo, mat(c.shirtColor, 0.75));
+  collar.position.set(0, 0.42, 0); g.add(collar);
+
+  // Arms
+  const armGeo = new THREE.CylinderGeometry(0.1, 0.09, 0.6, 10);
+  const skinMat = mat(c.skinColor, 0.65, 0.05);
+  const lArmG = new THREE.Group(); lArmG.name = 'lArm';
+  const rArmG = new THREE.Group(); rArmG.name = 'rArm';
+  const lArm = new THREE.Mesh(armGeo, mat(c.shirtColor, 0.75));
+  const rArm = new THREE.Mesh(armGeo, mat(c.shirtColor, 0.75));
+  lArm.position.y = -0.3; rArm.position.y = -0.3;
+  lArmG.add(lArm); rArmG.add(rArm);
+  // Forearm
+  const foreGeo = new THREE.CylinderGeometry(0.09, 0.08, 0.5, 10);
+  const lFore = new THREE.Mesh(foreGeo, skinMat); lFore.position.y = -0.55;
+  const rFore = new THREE.Mesh(foreGeo, skinMat); rFore.position.y = -0.55;
+  lArmG.add(lFore); rArmG.add(rFore);
+  lArmG.position.set(-0.42, 0.28, 0); lArmG.rotation.z =  0.12;
+  rArmG.position.set( 0.42, 0.28, 0); rArmG.rotation.z = -0.12;
+  g.add(lArmG); g.add(rArmG);
+
+  // Neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.18, 10), skinMat);
+  neck.position.set(0, 0.47, 0); g.add(neck);
+
+  // Head
+  const headG = new THREE.Group(); headG.name = 'head';
+  const headGeo = new THREE.SphereGeometry(0.3, 20, 20);
+  const head = new THREE.Mesh(headGeo, skinMat);
+  headG.add(head);
+
+  // Eyes
+  const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+  const eyeDark  = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3 });
+  const pupilM   = new THREE.MeshStandardMaterial({ color: 0x3366ff, roughness: 0.2, metalness: 0.1 });
+  [[-0.11, 1], [0.11, 1]].forEach(([x]) => {
+    const white = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), eyeWhite);
+    white.position.set(x, 0.06, 0.25); headG.add(white);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.042, 10, 10), pupilM);
+    pupil.position.set(x, 0.06, 0.3); headG.add(pupil);
+    const shine = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 6),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 }));
+    shine.position.set(x + 0.025, 0.09, 0.33); headG.add(shine);
+  });
+
+  // Eyebrows
+  const browMat = mat(c.hairColor, 0.9);
+  [-0.11, 0.11].forEach(x => {
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.025, 0.03), browMat);
+    brow.position.set(x, 0.16, 0.27); headG.add(brow);
+  });
+
+  // Mouth (smile)
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.015, 6, 12, Math.PI),
+    new THREE.MeshStandardMaterial({ color: 0x993322, roughness: 0.8 }));
+  mouth.position.set(0, -0.1, 0.27); mouth.rotation.z = Math.PI; headG.add(mouth);
+
+  // Nose
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 8), skinMat);
+  nose.position.set(0, 0, 0.3); nose.scale.set(1, 0.7, 0.5); headG.add(nose);
+
+  // Hair
+  addHair3D(headG, c.hairStyle, c.hairColor);
+
+  headG.position.set(0, 0.68, 0);
+  g.add(headG);
+
+  // Accessory
+  addAccessory3D(g, headG, c.accessory, c.accColor);
+
+  // Weapon in right hand
+  addWeapon3D(rArmG, c.weapon);
+
+  // Shadow plane
+  g.position.y = 0.15;
+  return g;
+}
+
+function addHair3D(headG, style, color) {
+  const hMat = mat(color, 0.85, 0.05);
+  if (style === '대머리') {
+    const shine = new THREE.Mesh(new THREE.SphereGeometry(0.31, 16, 16),
+      new THREE.MeshStandardMaterial({ color: hexToThreeColor(color.replace('#', '#')), roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.4 }));
+    headG.add(shine); return;
+  }
+  if (style === '짧은머리') {
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.305, 16, 16), hMat);
+    cap.scale.set(1, 0.55, 1); cap.position.y = 0.14; headG.add(cap);
+    // Side tufts
+    [-1, 1].forEach(s => {
+      const tuft = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.25, 0.2), hMat);
+      tuft.position.set(s * 0.28, 0, 0); headG.add(tuft);
+    });
+  } else if (style === '긴머리') {
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.305, 16, 16), hMat);
+    cap.scale.set(1, 0.55, 1); cap.position.y = 0.14; headG.add(cap);
+    const long = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, 0.15), hMat);
+    long.position.set(0, -0.35, -0.1); headG.add(long);
+  } else if (style === '곱슬머리') {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const curl = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), hMat);
+      curl.position.set(Math.cos(a)*0.22, 0.05 + Math.sin(a)*0.1, Math.sin(a)*0.18); headG.add(curl);
+    }
+    const top = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 10), hMat);
+    top.position.y = 0.28; headG.add(top);
+  } else if (style === '포니테일') {
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.305, 16, 16), hMat);
+    cap.scale.set(1, 0.55, 1); cap.position.y = 0.14; headG.add(cap);
+    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.04, 0.6, 8), hMat);
+    tail.position.set(0, -0.3, -0.28); tail.rotation.x = 0.4; headG.add(tail);
+  } else if (style === '모히칸') {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.42, 0.58), hMat);
+    strip.position.set(0, 0.32, 0); headG.add(strip);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.25, 6), hMat);
+    tip.position.set(0, 0.62, 0); headG.add(tip);
+  }
+}
+
+function addAccessory3D(g, headG, acc, color) {
+  const aMat = new THREE.MeshStandardMaterial({ color: hexToThreeColor(color), roughness: 0.4, metalness: 0.3 });
+  if (acc === '모자') {
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.06, 20), aMat);
+    brim.position.set(0, 1.06, 0); g.add(brim);
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 0.35, 16), aMat);
+    top.position.set(0, 1.26, 0); g.add(top);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.265, 0.265, 0.06, 16),
+      new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }));
+    band.position.set(0, 1.09, 0); g.add(band);
+  } else if (acc === '안경') {
+    const frameMat = new THREE.MeshStandardMaterial({ color: hexToThreeColor(color), roughness: 0.3, metalness: 0.6 });
+    [-0.12, 0.12].forEach(x => {
+      const frame = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.015, 8, 20), frameMat);
+      frame.position.set(x, 0.74, 0.29); frame.rotation.y = Math.PI / 2; g.add(frame);
+    });
+    const bridge = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.08, 6), frameMat);
+    bridge.rotation.z = Math.PI / 2; bridge.position.set(0, 0.74, 0.29); g.add(bridge);
+  } else if (acc === '왕관') {
+    const crownMat = new THREE.MeshStandardMaterial({ color: hexToThreeColor(color), roughness: 0.2, metalness: 0.8,
+      emissive: hexToThreeColor(color), emissiveIntensity: 0.15 });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.35, 0.12, 20, 1, true), crownMat);
+    base.position.set(0, 1.04, 0); g.add(base);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 5), crownMat);
+      spike.position.set(Math.cos(a)*0.3, 1.22, Math.sin(a)*0.3); g.add(spike);
+    }
+  } else if (acc === '후광') {
+    const haloMat = new THREE.MeshStandardMaterial({
+      color: hexToThreeColor(color), roughness: 0.1, metalness: 0.5,
+      emissive: hexToThreeColor(color), emissiveIntensity: 0.8
+    });
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.04, 10, 30), haloMat);
+    halo.name = 'halo';
+    halo.position.set(0, 1.18, 0); halo.rotation.x = Math.PI / 2; g.add(halo);
+  } else if (acc === '마스크') {
+    const mask = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.22, 0.12),
+      new THREE.MeshStandardMaterial({ color: hexToThreeColor(color), roughness: 0.6 }));
+    mask.position.set(0, 0.54, 0.27); g.add(mask);
+    for (let i = 0; i < 3; i++) {
+      const line = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.01, 0.01),
+        new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.9 }));
+      line.position.set(0, 0.56 - i * 0.06, 0.33); g.add(line);
+    }
+  }
+}
+
+function addWeapon3D(armG, weapon) {
+  const wMat = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.4, metalness: 0.7 });
+  const acMat = new THREE.MeshStandardMaterial({ color: 0xFFAA00, roughness: 0.3, metalness: 0.8 });
+  const wG = new THREE.Group(); wG.name = 'weapon';
+
+  if (weapon === 'pistol') {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.26), wMat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.22, 8), wMat);
+    barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.22;
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 0.1), wMat);
+    grip.position.set(0, -0.14, 0.02); grip.rotation.x = 0.2;
+    wG.add(body); wG.add(barrel); wG.add(grip);
+  } else if (weapon === 'shotgun') {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.5), wMat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 8), wMat);
+    barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.5;
+    wG.add(body); wG.add(barrel);
+  } else if (weapon === 'rifle') {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.6), wMat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.35, 8), wMat);
+    barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.52;
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.08), acMat);
+    mag.position.set(0, -0.14, 0.1);
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.24, 8), wMat);
+    scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.1, 0.1);
+    wG.add(body); wG.add(barrel); wG.add(mag); wG.add(scope);
+  } else if (weapon === 'sniper') {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.11, 0.8), wMat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8), wMat);
+    barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.75;
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.35, 8), wMat);
+    scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.12, 0.2);
+    wG.add(body); wG.add(barrel); wG.add(scope);
+  } else if (weapon === 'smg') {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.36), wMat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.2, 8), wMat);
+    barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.35;
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.06), acMat);
+    mag.position.set(0, -0.15, 0.08);
+    wG.add(body); wG.add(barrel); wG.add(mag);
+  }
+
+  wG.rotation.set(-0.3, 0, 0);
+  wG.position.set(0.06, -0.72, 0.15);
+  armG.add(wG);
+}
+
+function initPreview() {
+  const canvas = document.getElementById('char-canvas-3d');
+  pScene = new THREE.Scene();
+  pCamera = new THREE.PerspectiveCamera(42, canvas.width / canvas.height, 0.1, 100);
+  pCamera.position.set(0, 0.3, 3.8);
+  pCamera.lookAt(0, 0.2, 0);
+
+  pRenderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  pRenderer.setSize(canvas.width, canvas.height);
+  pRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  pRenderer.shadowMap.enabled = true;
+  pRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  pRenderer.setClearColor(0x000000, 0);
+  pRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+  pRenderer.toneMappingExposure = 1.2;
+
+  // Lighting setup
+  const ambient = new THREE.AmbientLight(0x8899CC, 0.6);
+  pScene.add(ambient);
+  const key = new THREE.DirectionalLight(0xFFFFEE, 1.4);
+  key.position.set(2, 4, 3); key.castShadow = true; pScene.add(key);
+  const fill = new THREE.DirectionalLight(0x6688FF, 0.5);
+  fill.position.set(-2, 1, -1); pScene.add(fill);
+  const rim = new THREE.DirectionalLight(0xFFAA44, 0.6);
+  rim.position.set(0, -1, -4); pScene.add(rim);
+
+  // Ground shadow disc
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(0.8, 32),
+    new THREE.MeshStandardMaterial({ color: 0x6633CC, roughness: 1, transparent: true, opacity: 0.35 })
+  );
+  disc.rotation.x = -Math.PI / 2; disc.position.y = -1.1; pScene.add(disc);
+
+  // Drag to rotate
+  canvas.addEventListener('touchstart', e => { isDragging = true; prevX = e.touches[0].clientX; });
+  canvas.addEventListener('touchmove', e => {
+    if (!isDragging) return;
+    rotY += (e.touches[0].clientX - prevX) * 0.015;
+    prevX = e.touches[0].clientX;
+  });
+  canvas.addEventListener('touchend', () => isDragging = false);
+  canvas.addEventListener('mousedown', e => { isDragging = true; prevX = e.clientX; });
+  canvas.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    rotY += (e.clientX - prevX) * 0.012;
+    prevX = e.clientX;
+  });
+  canvas.addEventListener('mouseup', () => isDragging = false);
+
+  rebuildChar();
+  animatePreview();
+}
+
+function rebuildChar() {
+  if (pChar) pScene.remove(pChar);
+  pChar = buildPreviewChar(char);
+  pScene.add(pChar);
+}
+
+function animatePreview() {
+  requestAnimationFrame(animatePreview);
+  pTime += 0.016;
+  if (pChar) {
+    if (!isDragging) rotY += 0.006;
+    pChar.rotation.y = rotY;
+    pChar.position.y = Math.sin(pTime * 1.6) * 0.04;
+    // Arms idle swing
+    const lArm = pChar.getObjectByName('lArm');
+    const rArm = pChar.getObjectByName('rArm');
+    if (lArm) lArm.rotation.x =  Math.sin(pTime * 1.6) * 0.12;
+    if (rArm) rArm.rotation.x = -Math.sin(pTime * 1.6) * 0.12;
+    // Halo spin
+    const halo = pChar.getObjectByName('halo');
+    if (halo) halo.rotation.z = pTime * 1.2;
+  }
+  pRenderer.render(pScene, pCamera);
+}
 
 /* ── DOM helpers ── */
 function toast(msg) {
   const el = document.createElement('div');
-  el.className = 'toast';
-  el.textContent = msg;
+  el.className = 'toast'; el.textContent = msg;
   document.getElementById('toast-container').appendChild(el);
   setTimeout(() => el.remove(), 3200);
 }
@@ -36,12 +367,12 @@ function makeSwatches(containerId, colors, key) {
     const sw = document.createElement('div');
     sw.className = 'color-swatch' + (char[key] === c ? ' selected' : '');
     sw.style.background = c;
-    if (c === '#FFFFFF') sw.style.border = '3px solid rgba(255,255,255,0.3)';
+    if (c === '#FFFFFF') sw.style.border = '3px solid rgba(255,255,255,0.25)';
     sw.addEventListener('click', () => {
       wrap.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
       sw.classList.add('selected');
       char[key] = c;
-      drawCharacter();
+      rebuildChar();
     });
     wrap.appendChild(sw);
   });
@@ -57,7 +388,7 @@ function makeStyleBtns(containerId, items, key) {
       wrap.querySelectorAll('.style-btn').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       char[key] = item;
-      drawCharacter();
+      rebuildChar();
     });
     wrap.appendChild(btn);
   });
@@ -74,18 +405,20 @@ function makeWeapons() {
         <div class="weapon-name">${w.name}</div>
         <div class="weapon-desc">${w.desc}</div>
         <div style="margin-top:6px">
-          ${bar('데미지', w.dmg / 20)}
-          ${bar('연사', w.rate / 5)}
-          ${bar('사거리', w.range / 5)}
-          ${bar('장탄', Math.min(w.ammo / 30, 1))}
+          ${bar('데미지',  w.dmg / 20)}
+          ${bar('연사',    w.rate / 5)}
+          ${bar('사거리',  w.range / 5)}
+          ${bar('장탄',    Math.min(w.ammo / 30, 1))}
         </div>
       </div>
-      <div style="font-size:11px;color:rgba(255,255,255,0.5)">장탄수<br><b style="font-size:18px;color:#fff">${w.ammo}</b></div>
-    `;
+      <div style="text-align:right;font-size:11px;color:rgba(255,255,255,0.5)">
+        장탄수<br><b style="font-size:20px;color:#fff">${w.ammo}</b>
+      </div>`;
     card.addEventListener('click', () => {
       list.querySelectorAll('.weapon-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
       char.weapon = key;
+      rebuildChar();
     });
     list.appendChild(card);
   });
@@ -98,140 +431,6 @@ function bar(label, ratio) {
   </div>`;
 }
 
-/* ── Canvas character drawing ── */
-function drawCharacter() {
-  const canvas = document.getElementById('char-canvas');
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-
-  const cx = W / 2;
-
-  // Pants / legs
-  ctx.fillStyle = char.pantsColor;
-  ctx.beginPath(); ctx.roundRect(cx - 22, 135, 19, 55, 4); ctx.fill();
-  ctx.beginPath(); ctx.roundRect(cx + 3,  135, 19, 55, 4); ctx.fill();
-
-  // Shoes
-  ctx.fillStyle = '#1a1a2e';
-  ctx.beginPath(); ctx.ellipse(cx - 12, 191, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(cx + 12, 191, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
-
-  // Body
-  ctx.fillStyle = char.shirtColor;
-  ctx.beginPath(); ctx.roundRect(cx - 28, 82, 56, 60, 6); ctx.fill();
-
-  // Arms
-  ctx.fillStyle = char.skinColor;
-  ctx.beginPath(); ctx.roundRect(cx - 44, 84, 17, 48, 5); ctx.fill();
-  ctx.beginPath(); ctx.roundRect(cx + 27, 84, 17, 48, 5); ctx.fill();
-
-  // Neck
-  ctx.fillStyle = char.skinColor;
-  ctx.beginPath(); ctx.roundRect(cx - 9, 70, 18, 18, 4); ctx.fill();
-
-  // Head
-  ctx.fillStyle = char.skinColor;
-  ctx.beginPath(); ctx.ellipse(cx, 50, 34, 36, 0, 0, Math.PI * 2); ctx.fill();
-
-  // Eyes
-  ctx.fillStyle = '#1a1a2e';
-  ctx.beginPath(); ctx.ellipse(cx - 12, 46, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(cx + 12, 46, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.ellipse(cx - 10, 44, 2, 2, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(cx + 14, 44, 2, 2, 0, 0, Math.PI * 2); ctx.fill();
-
-  // Smile
-  ctx.strokeStyle = '#1a1a2e'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.arc(cx, 57, 10, 0.1, Math.PI - 0.1); ctx.stroke();
-
-  // Hair
-  drawHair(ctx, cx, char.hairStyle, char.hairColor);
-
-  // Accessory
-  drawAccessory(ctx, cx, char.accessory, char.accColor);
-
-  // Weapon icon on arm
-  const w = WEAPON_DATA[char.weapon];
-  ctx.font = '18px serif';
-  ctx.fillText(w.icon, cx + 27, 120);
-
-  // Name tag
-  if (char.name) {
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    const tw = ctx.measureText(char.name).width + 12;
-    ctx.beginPath(); ctx.roundRect(cx - tw/2, 198, tw, 20, 4); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif';
-    ctx.textAlign = 'center'; ctx.fillText(char.name, cx, 212); ctx.textAlign = 'left';
-  }
-}
-
-function drawHair(ctx, cx, style, color) {
-  ctx.fillStyle = color;
-  if (style === '대머리') {
-    ctx.globalAlpha = 0.15;
-    ctx.beginPath(); ctx.ellipse(cx, 32, 34, 20, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1; return;
-  }
-  if (style === '짧은머리') {
-    ctx.beginPath(); ctx.ellipse(cx, 20, 34, 20, 0, Math.PI, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(cx - 34, 14, 10, 24, 3); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(cx + 24, 14, 10, 24, 3); ctx.fill();
-  } else if (style === '긴머리') {
-    ctx.beginPath(); ctx.ellipse(cx, 20, 34, 20, 0, Math.PI, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(cx - 40, 14, 12, 80, 5); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(cx + 28, 14, 12, 80, 5); ctx.fill();
-  } else if (style === '곱슬머리') {
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 - 0.5;
-      ctx.beginPath(); ctx.arc(cx + Math.cos(a)*20, 26 + Math.sin(a)*14, 14, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.beginPath(); ctx.arc(cx, 20, 14, 0, Math.PI * 2); ctx.fill();
-  } else if (style === '포니테일') {
-    ctx.beginPath(); ctx.ellipse(cx, 20, 34, 20, 0, Math.PI, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(cx - 34, 14, 10, 20, 3); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(cx + 24, 14, 10, 20, 3); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(cx + 28, 36, 10, 50, 5); ctx.fill();
-  } else if (style === '모히칸') {
-    ctx.beginPath(); ctx.roundRect(cx - 34, 14, 10, 20, 3); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(cx + 24, 14, 10, 20, 3); ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(cx - 10, 14); ctx.lineTo(cx, -12); ctx.lineTo(cx + 10, 14);
-    ctx.fill();
-  }
-}
-
-function drawAccessory(ctx, cx, acc, color) {
-  ctx.fillStyle = color;
-  if (acc === '모자') {
-    ctx.beginPath(); ctx.ellipse(cx, 14, 38, 8, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(cx - 24, -18, 48, 34, 4); ctx.fill();
-  } else if (acc === '안경') {
-    ctx.strokeStyle = color; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.ellipse(cx - 14, 46, 8, 7, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.ellipse(cx + 14, 46, 8, 7, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx - 6, 46); ctx.lineTo(cx + 6, 46); ctx.stroke();
-  } else if (acc === '왕관') {
-    ctx.beginPath();
-    ctx.moveTo(cx - 28, 12); ctx.lineTo(cx - 28, -4); ctx.lineTo(cx - 14, 4);
-    ctx.lineTo(cx, -10); ctx.lineTo(cx + 14, 4); ctx.lineTo(cx + 28, -4);
-    ctx.lineTo(cx + 28, 12); ctx.closePath(); ctx.fill();
-  } else if (acc === '후광') {
-    ctx.strokeStyle = color; ctx.lineWidth = 5;
-    ctx.globalAlpha = 0.85;
-    ctx.beginPath(); ctx.ellipse(cx, -8, 30, 8, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.globalAlpha = 1;
-  } else if (acc === '마스크') {
-    ctx.beginPath(); ctx.roundRect(cx - 20, 55, 40, 22, 5); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath(); ctx.moveTo(cx - 14, 62 + i * 5); ctx.lineTo(cx + 14, 62 + i * 5); ctx.stroke();
-    }
-  }
-}
-
-/* ── Init ── */
 function init() {
   makeSwatches('skin-colors',  SKIN_COLORS,  'skinColor');
   makeSwatches('hair-colors',  HAIR_COLORS,  'hairColor');
@@ -241,11 +440,10 @@ function init() {
   makeStyleBtns('hair-styles', HAIR_STYLES,  'hairStyle');
   makeStyleBtns('accessories', ACCESSORIES,  'accessory');
   makeWeapons();
-  drawCharacter();
+  initPreview();
 
   document.getElementById('name-input').addEventListener('input', e => {
     char.name = e.target.value;
-    drawCharacter();
   });
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
