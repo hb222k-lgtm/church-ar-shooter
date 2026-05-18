@@ -821,18 +821,36 @@ function updateCharacters(dt) {
   Object.values(players).forEach(p => {
     if (p.id === myId) return;
     const mesh = characterMeshes[p.id]; if (!mesh) return;
-    if (!p.alive) {
-      // Keep dead animation running until mesh is removed
-      animateCharacter(mesh, dt);
-      return;
-    }
-    const screen = getScreenAngle(p);
-    const dist = 9, rad = screen * Math.PI / 180;
-    const tx = Math.sin(rad)*dist, tz = -Math.cos(rad)*dist;
+    if (!p.alive) { animateCharacter(mesh, dt); return; }
+
+    const screen = getScreenAngle(p);   // -180 … +180  degrees
+    const rad    = screen * Math.PI / 180;
+
+    // ── Positioning ──────────────────────────────────────────────────
+    // Camera FOV = 70° → half-angle = 35° → at Z=7, frustum half-width ≈ 4.9 units.
+    // Old formula: tx=sin*9, tz=-cos*9  → enemies at 90°+ go off-screen / behind camera.
+    // New formula: sin maps the full -180…+180 range into ±4.2 (always inside frustum).
+    // tz is slightly deeper for side enemies to give a subtle depth cue.
+    const tx = Math.sin(rad) * 4.2;
+    const tz = -(7.0 - Math.abs(tx) * 0.18);   // 7.0 at center → ~6.2 at full edge
+
     mesh.position.x += (tx - mesh.position.x) * 0.12;
     mesh.position.z += (tz - mesh.position.z) * 0.12;
-    mesh.visible = Math.abs(screen) < 88;
+    mesh.visible = true;   // always visible when alive
+
+    // Scale: slightly smaller for "behind" enemies as a direction hint
+    const behindFactor = Math.max(0.72, (Math.cos(rad) + 2) / 3); // 0.72–1.0
+    mesh.scale.setScalar(behindFactor);
+
     mesh.lookAt(0, mesh.position.y, 0);
+
+    // Dim name/hp sprites when enemy is behind you (|screen|>90°)
+    const nameSp = mesh.getObjectByName('nameSprite');
+    const hpSp   = mesh.getObjectByName('hpBar');
+    const dimmed = Math.abs(screen) > 90;
+    if (nameSp?.material) nameSp.material.opacity = dimmed ? 0.45 : 1.0;
+    if (hpSp?.material)   hpSp.material.opacity   = dimmed ? 0.35 : 1.0;
+
     aimingAt[p.id] = Math.abs(screen) < weaponInfo.spread;
     if (aimingAt[p.id] && !(gameMode === 'team' && p.team === myTeam)) anyAiming = true;
     animateCharacter(mesh, dt);
