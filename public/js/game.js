@@ -1,11 +1,11 @@
 'use strict';
 
 const WEAPONS = {
-  pistol:  { name:'권총',    icon:'🔫', damage:25, fireRate:500,  ammo:12, reload:1500, spread:15 },
-  shotgun: { name:'샷건',    icon:'💥', damage:65, fireRate:1200, ammo:6,  reload:2500, spread:25 },
-  rifle:   { name:'돌격소총', icon:'🎯', damage:30, fireRate:150,  ammo:30, reload:2000, spread:10 },
-  sniper:  { name:'저격총',  icon:'🏹', damage:95, fireRate:2000, ammo:5,  reload:3000, spread:5  },
-  smg:     { name:'기관단총', icon:'⚡', damage:18, fireRate:80,   ammo:25, reload:1800, spread:20 },
+  pistol:  { name:'권총',    icon:'🔫', damage:25, fireRate:500,  ammo:12, reload:1500, spread:42 },
+  shotgun: { name:'샷건',    icon:'💥', damage:65, fireRate:1200, ammo:6,  reload:2500, spread:58 },
+  rifle:   { name:'돌격소총', icon:'🎯', damage:30, fireRate:150,  ammo:30, reload:2000, spread:34 },
+  sniper:  { name:'저격총',  icon:'🏹', damage:95, fireRate:2000, ammo:5,  reload:3000, spread:20 },
+  smg:     { name:'기관단총', icon:'⚡', damage:18, fireRate:80,   ammo:25, reload:1800, spread:55 },
 };
 
 const socket   = io();
@@ -783,8 +783,12 @@ function shoot() {
   Object.values(players).forEach(p => {
     if (p.id === myId || !p.alive) return;
     if (gameMode === 'team' && p.team === myTeam) return;
-    const angle = Math.abs(getScreenAngle(p));
-    if (angle < bestAngle) { bestAngle = angle; targetId = p.id; }
+    const mesh = characterMeshes[p.id];
+    if (!mesh) return;
+    // Use actual 3D screen-space angle: atan(|x| / |z|)
+    // This matches what the player visually sees on screen, not virtual compass angle
+    const screenAngle = Math.atan2(Math.abs(mesh.position.x), Math.abs(mesh.position.z)) * 180 / Math.PI;
+    if (screenAngle < bestAngle) { bestAngle = screenAngle; targetId = p.id; }
   });
 
   if (targetId) {
@@ -827,31 +831,37 @@ function updateCharacters(dt) {
     const rad    = screen * Math.PI / 180;
 
     // ── Positioning ──────────────────────────────────────────────────
-    // Camera FOV = 70° → half-angle = 35° → at Z=7, frustum half-width ≈ 4.9 units.
-    // Old formula: tx=sin*9, tz=-cos*9  → enemies at 90°+ go off-screen / behind camera.
-    // New formula: sin maps the full -180…+180 range into ±4.2 (always inside frustum).
-    // tz is slightly deeper for side enemies to give a subtle depth cue.
-    const tx = Math.sin(rad) * 4.2;
-    const tz = -(7.0 - Math.abs(tx) * 0.18);   // 7.0 at center → ~6.2 at full edge
+    // sin() maps any angle to ±4.2 so enemies always stay inside camera frustum.
+    const baseTx = Math.sin(rad) * 4.2;
+    const tz     = -(7.0 - Math.abs(baseTx) * 0.18);
 
-    mesh.position.x += (tx - mesh.position.x) * 0.12;
-    mesh.position.z += (tz - mesh.position.z) * 0.12;
-    mesh.visible = true;   // always visible when alive
+    // Organic sway: each player gets a unique phase from their ID bytes
+    // Makes characters feel alive even without compass movement
+    const seed  = (p.id.charCodeAt(0) || 0) + (p.id.charCodeAt(2) || 0);
+    const sway  = Math.sin(performance.now() * 0.00055 + seed * 0.38) * 0.22;
+    const tx    = baseTx + sway;
 
-    // Scale: slightly smaller for "behind" enemies as a direction hint
-    const behindFactor = Math.max(0.72, (Math.cos(rad) + 2) / 3); // 0.72–1.0
+    mesh.position.x += (tx - mesh.position.x) * 0.1;
+    mesh.position.z += (tz - mesh.position.z) * 0.1;
+    mesh.visible = true;
+
+    // Scale: slightly smaller for "behind" enemies as direction hint
+    const behindFactor = Math.max(0.75, (Math.cos(rad) + 2) / 3);
     mesh.scale.setScalar(behindFactor);
 
     mesh.lookAt(0, mesh.position.y, 0);
 
-    // Dim name/hp sprites when enemy is behind you (|screen|>90°)
+    // Dim name/hp when enemy is behind you (|screen|>90°)
     const nameSp = mesh.getObjectByName('nameSprite');
     const hpSp   = mesh.getObjectByName('hpBar');
     const dimmed = Math.abs(screen) > 90;
     if (nameSp?.material) nameSp.material.opacity = dimmed ? 0.45 : 1.0;
     if (hpSp?.material)   hpSp.material.opacity   = dimmed ? 0.35 : 1.0;
 
-    aimingAt[p.id] = Math.abs(screen) < weaponInfo.spread;
+    // ── Aiming: use actual 3D screen-space angle, not virtual compass angle ──
+    // atan(|x|/|z|) = angle from camera forward ray to enemy position on screen
+    const screenAngle3D = Math.atan2(Math.abs(mesh.position.x), Math.abs(mesh.position.z)) * 180 / Math.PI;
+    aimingAt[p.id] = screenAngle3D < weaponInfo.spread;
     if (aimingAt[p.id] && !(gameMode === 'team' && p.team === myTeam)) anyAiming = true;
     animateCharacter(mesh, dt);
   });
