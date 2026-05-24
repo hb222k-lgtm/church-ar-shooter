@@ -35,7 +35,32 @@ const weaponInfo = WEAPONS[weapon];
 
 let scene, camera, renderer;
 const characterMeshes = {};
-const radarDots = {};
+const radarDots       = {};
+const playerZones     = {};   // playerId → zone index
+let   raycaster;
+
+// ── Screen zones: fixed 3-D positions where enemies stand ──────────────────
+// X: -3.8(far-left) … 0 … +3.8(far-right)   Z: -6(close) … -10(far)
+const ZONES = [
+  { x:  0.0, z: -6.5 },   // 0  center-front
+  { x: -2.8, z: -7.2 },   // 1  left
+  { x:  2.8, z: -7.2 },   // 2  right
+  { x: -1.3, z: -6.8 },   // 3  center-left
+  { x:  1.3, z: -6.8 },   // 4  center-right
+  { x: -3.6, z: -7.8 },   // 5  far-left
+  { x:  3.6, z: -7.8 },   // 6  far-right
+  { x:  0.0, z: -8.5 },   // 7  center-back
+  { x: -2.2, z: -9.0 },   // 8  back-left
+  { x:  2.2, z: -9.0 },   // 9  back-right
+];
+
+function assignZone(playerId) {
+  const used = new Set(Object.values(playerZones));
+  for (let i = 0; i < ZONES.length; i++) {
+    if (!used.has(i)) { playerZones[playerId] = i; return; }
+  }
+  playerZones[playerId] = Math.floor(Math.random() * ZONES.length);
+}
 
 /* ══════════════ BOOT ══════════════ */
 document.getElementById('start-perm-btn').addEventListener('click', startGame);
@@ -49,7 +74,15 @@ async function startGame() {
   setupControls();
   initHUD();
   initPlayers();
+  showTapHint();
   requestAnimationFrame(loop);
+}
+
+function showTapHint() {
+  const h = document.createElement('div');
+  h.id = 'tap-hint'; h.textContent = '👆 적을 직접 탭해서 격추!';
+  document.getElementById('game-page').appendChild(h);
+  setTimeout(() => h.remove(), 3600);
 }
 
 /* ══════════════ CAMERA ══════════════ */
@@ -69,7 +102,8 @@ function setupThreeJS() {
   const canvas = document.getElementById('ar-canvas');
   scene    = new THREE.Scene();
   camera   = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 200);
-  renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  raycaster = new THREE.Raycaster();
+  renderer  = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
   renderer.setSize(innerWidth, innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setClearColor(0x000000, 0);
@@ -677,8 +711,13 @@ function spawnCharacter(player) {
   const mesh = buildCharacter(player.character || {}, player.team);
   mesh.visible = false;
   mesh.userData.baseX = 0; mesh.userData.baseY = 0;
+  // Store playerId on every child so raycasting can identify the character
+  mesh.userData.playerId = player.id;
+  mesh.traverse(child => { child.userData.playerId = player.id; });
   scene.add(mesh);
   characterMeshes[player.id] = mesh;
+  // Assign a screen zone if not already assigned
+  if (playerZones[player.id] === undefined) assignZone(player.id);
 }
 
 /* ══════════════ SOCKET ══════════════ */
@@ -760,45 +799,98 @@ function setupSocket() {
 
 /* ══════════════ CONTROLS ══════════════ */
 function setupControls() {
-  const shootBtn = document.getElementById('shoot-btn');
   const reloadBtn = document.getElementById('reload-btn');
+  reloadBtn.addEventListener('click', reload);
+
+  // ── Shoot button: fires at the most-centered enemy (fallback) ──
+  const shootBtn = document.getElementById('shoot-btn');
   shootBtn.addEventListener('touchstart', e => { e.preventDefault(); shoot(); }, { passive: false });
   shootBtn.addEventListener('mousedown', shoot);
-  reloadBtn.addEventListener('click', reload);
   let autoFire = null;
   shootBtn.addEventListener('touchstart', () => {
     if (weapon === 'rifle' || weapon === 'smg') autoFire = setInterval(shoot, weaponInfo.fireRate);
   }, { passive: true });
   ['touchend','touchcancel'].forEach(ev => shootBtn.addEventListener(ev, () => clearInterval(autoFire)));
+
+  // ── Tap directly on enemy character to shoot them ──
+  const arCanvas = document.getElementById('ar-canvas');
+  arCanvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    handleTap(t.clientX, t.clientY);
+  }, { passive: false });
+  arCanvas.addEventListener('click', e => handleTap(e.clientX, e.clientY));
 }
 
+function handleTap(clientX, clientY) {
+  if (!isAlive) return;
+  const ndcX = (clientX / window.innerWidth)  *  2 - 1;
+  const ndcY = (clientY / window.innerHeight) * -2 + 1;
+  raycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
+
+  const visibleMeshes = Object.values(characterMeshes).filter(m => m.visible);
+  const hits = raycaster.intersectObjects(visibleMeshes, true);
+
+  if (hits.length > 0) {
+    // Walk up to find the group root that holds playerId
+    let obj = hits[0].object;
+    while (obj && !obj.userData.playerId) obj = obj.parent;
+    const targetId = obj?.userData?.playerId;
+    if (targetId && targetId !== myId) {
+      const target = players[targetId];
+      if (target?.alive && !(gameMode === 'team' && target.team === myTeam)) {
+        shootAtTarget(targetId, clientX, clientY);
+        return;
+      }
+    }
+  }
+  // Tapped empty space → fire toward most-centered enemy
+  shoot();
+}
+
+function shootAtTarget(targetId, tapX, tapY) {
+  if (!isAlive || isReloading) return;
+  const now = Date.now();
+  if (now - lastShot < weaponInfo.fireRate) return;
+  if (currentAmmo <= 0) { reload(); return; }
+  if (!players[targetId]?.alive) return;
+
+  lastShot = now; currentAmmo--; updateAmmoHUD();
+  socket.emit('shoot', { targetId, weapon });
+  flashCrosshair();
+  spawnMuzzleFlash();
+
+  // Tap ring animation at touch point
+  if (tapX !== undefined) showTapIndicator(tapX, tapY, false);
+
+  const tm = characterMeshes[targetId];
+  if (tm) { tm.userData.animState = 'shoot'; tm.userData.shootTimer = 0.28; }
+}
+
+// Shoot button fallback: hit the most-centered visible enemy
 function shoot() {
   if (!isAlive || isReloading) return;
   const now = Date.now();
   if (now - lastShot < weaponInfo.fireRate) return;
   if (currentAmmo <= 0) { reload(); return; }
-  lastShot = now; currentAmmo--; updateAmmoHUD();
 
-  let targetId = null, bestAngle = weaponInfo.spread;
+  let targetId = null, bestAngle = 65; // generous 65° threshold for button
   Object.values(players).forEach(p => {
     if (p.id === myId || !p.alive) return;
     if (gameMode === 'team' && p.team === myTeam) return;
     const mesh = characterMeshes[p.id];
-    if (!mesh) return;
-    // Use actual 3D screen-space angle: atan(|x| / |z|)
-    // This matches what the player visually sees on screen, not virtual compass angle
-    const screenAngle = Math.atan2(Math.abs(mesh.position.x), Math.abs(mesh.position.z)) * 180 / Math.PI;
-    if (screenAngle < bestAngle) { bestAngle = screenAngle; targetId = p.id; }
+    if (!mesh || !mesh.visible) return;
+    const ang = Math.atan2(Math.abs(mesh.position.x), Math.abs(mesh.position.z)) * 180 / Math.PI;
+    if (ang < bestAngle) { bestAngle = ang; targetId = p.id; }
   });
 
   if (targetId) {
-    socket.emit('shoot', { targetId, weapon });
-    flashCrosshair();
-    const tm = characterMeshes[targetId];
-    if (tm) { tm.userData.animState = 'shoot'; tm.userData.shootTimer = 0.2; }
+    shootAtTarget(targetId);
+  } else {
+    // No target but still show muzzle flash + consume ammo
+    lastShot = now; currentAmmo--; updateAmmoHUD();
+    spawnMuzzleFlash();
   }
-
-  spawnMuzzleFlash();
 }
 
 function reload() {
@@ -813,58 +905,42 @@ function reload() {
   }, weaponInfo.reload);
 }
 
-/* ══════════════ AR POSITIONING ══════════════ */
-function getScreenAngle(player) {
-  const my = players[myId]; if (!my) return 999;
-  let screen = (player.virtualAngle||0) - (my.virtualAngle||0) - compass;
-  return ((screen + 180 + 360) % 360) - 180;
-}
-
+/* ══════════════ CHARACTER POSITIONING (Zone-based — no compass needed) ══════ */
 function updateCharacters(dt) {
   aimingAt = {}; let anyAiming = false;
+  const now = performance.now();
+
   Object.values(players).forEach(p => {
     if (p.id === myId) return;
     const mesh = characterMeshes[p.id]; if (!mesh) return;
+
     if (!p.alive) { animateCharacter(mesh, dt); return; }
 
-    const screen = getScreenAngle(p);   // -180 … +180  degrees
-    const rad    = screen * Math.PI / 180;
+    // ── Place enemy at their assigned screen zone ─────────────────────
+    const zoneIdx = playerZones[p.id] ?? 0;
+    const zone    = ZONES[zoneIdx % ZONES.length];
 
-    // ── Positioning ──────────────────────────────────────────────────
-    // sin() maps any angle to ±4.2 so enemies always stay inside camera frustum.
-    const baseTx = Math.sin(rad) * 4.2;
-    const tz     = -(7.0 - Math.abs(baseTx) * 0.18);
+    // Organic per-player sway so they look alive (no compass required)
+    const seed = (p.id.charCodeAt(0) || 0) + (p.id.charCodeAt(2) || 0);
+    const swayX = Math.sin(now * 0.00058 + seed * 0.41) * 0.22;
+    const swayZ = Math.cos(now * 0.00042 + seed * 0.27) * 0.06;
 
-    // Organic sway: each player gets a unique phase from their ID bytes
-    // Makes characters feel alive even without compass movement
-    const seed  = (p.id.charCodeAt(0) || 0) + (p.id.charCodeAt(2) || 0);
-    const sway  = Math.sin(performance.now() * 0.00055 + seed * 0.38) * 0.22;
-    const tx    = baseTx + sway;
-
-    mesh.position.x += (tx - mesh.position.x) * 0.1;
-    mesh.position.z += (tz - mesh.position.z) * 0.1;
+    mesh.position.x += (zone.x + swayX - mesh.position.x) * 0.09;
+    mesh.position.z += (zone.z + swayZ - mesh.position.z) * 0.09;
     mesh.visible = true;
 
-    // Scale: slightly smaller for "behind" enemies as direction hint
-    const behindFactor = Math.max(0.75, (Math.cos(rad) + 2) / 3);
-    mesh.scale.setScalar(behindFactor);
-
+    // Closer enemies appear larger
+    mesh.scale.setScalar(Math.min(1.05, 6.5 / Math.abs(mesh.position.z)));
     mesh.lookAt(0, mesh.position.y, 0);
 
-    // Dim name/hp when enemy is behind you (|screen|>90°)
-    const nameSp = mesh.getObjectByName('nameSprite');
-    const hpSp   = mesh.getObjectByName('hpBar');
-    const dimmed = Math.abs(screen) > 90;
-    if (nameSp?.material) nameSp.material.opacity = dimmed ? 0.45 : 1.0;
-    if (hpSp?.material)   hpSp.material.opacity   = dimmed ? 0.35 : 1.0;
-
-    // ── Aiming: use actual 3D screen-space angle, not virtual compass angle ──
-    // atan(|x|/|z|) = angle from camera forward ray to enemy position on screen
-    const screenAngle3D = Math.atan2(Math.abs(mesh.position.x), Math.abs(mesh.position.z)) * 180 / Math.PI;
-    aimingAt[p.id] = screenAngle3D < weaponInfo.spread;
+    // ── Crosshair glow: 3-D screen angle from camera forward ray ─────
+    const screenAng = Math.atan2(Math.abs(mesh.position.x), Math.abs(mesh.position.z)) * 180 / Math.PI;
+    aimingAt[p.id] = screenAng < weaponInfo.spread;
     if (aimingAt[p.id] && !(gameMode === 'team' && p.team === myTeam)) anyAiming = true;
+
     animateCharacter(mesh, dt);
   });
+
   document.getElementById('crosshair').classList.toggle('aim-on', anyAiming);
 }
 
@@ -917,12 +993,11 @@ function updateRadar(alive) {
   alive.forEach(p => {
     if (p.id === myId) return;
     const isEnemy = gameMode !== 'team' || p.team !== myTeam;
-    const angle   = getScreenAngle(p) * Math.PI / 180;
-
-    // Clamp to edge if angle > 85° (character off screen — show at radar edge)
-    const edgeR = R;
-    const x = CX + Math.sin(angle) * edgeR;
-    const y = CY - Math.cos(angle) * edgeR;
+    // Use mesh 3D position to derive radar angle (works without compass)
+    const mesh3 = characterMeshes[p.id];
+    const angle = mesh3 ? Math.atan2(mesh3.position.x, -mesh3.position.z) : 0;
+    const x = CX + Math.sin(angle) * R;
+    const y = CY - Math.cos(angle) * R;
 
     if (!radarDots[p.id]) {
       // New dot: create persistent element + ping ring
@@ -968,6 +1043,15 @@ function showFloatingDamage(pos, dmg) {
   document.getElementById('game-page').appendChild(el);
   setTimeout(() => el.remove(), 1000);
 }
+function showTapIndicator(x, y, miss = false) {
+  const el = document.createElement('div');
+  el.className = miss ? 'tap-indicator tap-miss' : 'tap-indicator';
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+  document.getElementById('game-page').appendChild(el);
+  setTimeout(() => el.remove(), 450);
+}
+
 function addKillFeed(killer, dead) {
   const feed = document.getElementById('kill-feed');
   const row = document.createElement('div'); row.className = 'kill-row';
