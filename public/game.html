@@ -2,109 +2,209 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Church AR Shooter – Game</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Church Shooter – 게임</title>
 <link rel="stylesheet" href="css/style.css">
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:#000; width:100%; height:100%; }
+  #game-canvas { display:block; position:fixed; inset:0; width:100%; height:100%; touch-action:none; }
+
+  /* Wave HUD */
+  #wave-hud {
+    display:none; position:fixed; top:14px; left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,0.65); backdrop-filter:blur(8px);
+    border:1px solid rgba(255,255,255,0.18); border-radius:20px;
+    padding:6px 20px; font-size:15px; font-weight:700; color:#fff;
+    z-index:8; white-space:nowrap; pointer-events:none;
+  }
+
+  /* Team HUD */
+  #team-hud {
+    display:none; position:fixed; top:14px; left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,0.65); backdrop-filter:blur(8px);
+    border:1px solid rgba(255,255,255,0.18); border-radius:20px;
+    padding:6px 20px; font-size:15px; font-weight:700; color:#fff;
+    z-index:8; pointer-events:none;
+  }
+
+  /* HP bar */
+  #hud-hp {
+    position:fixed; top:14px; left:14px; z-index:9;
+    display:flex; align-items:center; gap:8px;
+    background:rgba(0,0,0,0.55); backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,0.12); border-radius:14px;
+    padding:7px 14px;
+  }
+  #hud-hp .label { font-size:12px; color:rgba(255,255,255,0.5); font-weight:700; }
+  #hp-bar { width:90px; height:8px; background:rgba(255,255,255,0.12); border-radius:4px; overflow:hidden; }
+  #hp-fill { height:100%; width:100%; background:#10B981; border-radius:4px; transition:width 0.15s,background 0.3s; }
+  #hp-num { font-size:14px; font-weight:700; color:#fff; min-width:28px; }
+
+  /* Ammo HUD */
+  #hud-ammo {
+    position:fixed; top:14px; right:14px; z-index:9;
+    background:rgba(0,0,0,0.55); backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,0.12); border-radius:14px;
+    padding:7px 14px; text-align:right;
+  }
+  #ammo-weapon-name { font-size:11px; color:rgba(255,255,255,0.45); font-weight:600; }
+  #ammo-cur { font-size:22px; font-weight:900; color:#fff; }
+  #ammo-max { font-size:13px; color:rgba(255,255,255,0.4); }
+
+  /* Kill feed */
+  #kill-feed {
+    position:fixed; top:58px; right:14px; z-index:15;
+    display:flex; flex-direction:column; gap:4px; align-items:flex-end;
+    pointer-events:none;
+  }
+  .kf-item {
+    background:rgba(0,0,0,0.72); backdrop-filter:blur(4px);
+    border:1px solid rgba(255,255,255,0.1); border-radius:8px;
+    padding:4px 10px; font-size:12px; color:#fff;
+    animation:fadeIn 0.2s ease;
+  }
+
+  /* Hit flash */
+  #hit-flash {
+    position:fixed; inset:0; z-index:20; pointer-events:none;
+    background:radial-gradient(ellipse at center,transparent 50%,rgba(255,40,40,0.55) 100%);
+    opacity:0; transition:opacity 0.12s;
+  }
+
+  /* Reload button */
+  #reload-btn {
+    position:fixed; bottom:28px; right:24px; z-index:12;
+    width:58px; height:58px; border-radius:50%;
+    background:rgba(30,30,50,0.82); backdrop-filter:blur(6px);
+    border:2px solid rgba(255,255,255,0.25); color:#fff;
+    font-size:12px; font-weight:700; cursor:pointer;
+    touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+  }
+  #reload-btn:active { background:rgba(99,102,241,0.6); }
+  #reload-btn.reloading { border-color:#F59E0B; color:#F59E0B; }
+
+  /* Game over overlay */
+  #game-over-overlay {
+    display:none; position:fixed; inset:0; z-index:40;
+    background:rgba(0,0,0,0.78); backdrop-filter:blur(10px);
+    flex-direction:column; align-items:center; justify-content:center; gap:16px;
+  }
+
+  /* Game result overlay */
+  #game-result-overlay {
+    display:none; position:fixed; inset:0; z-index:45;
+    background:rgba(0,0,0,0.88); backdrop-filter:blur(14px);
+    flex-direction:column; align-items:center; justify-content:center;
+    padding:32px; gap:16px; overflow-y:auto;
+  }
+  .result-title { font-size:36px; font-weight:900; color:#10B981; }
+  .result-table { border-collapse:collapse; min-width:260px; }
+  .result-table th, .result-table td {
+    padding:8px 16px; text-align:left; font-size:14px;
+    border-bottom:1px solid rgba(255,255,255,0.1);
+  }
+  .result-table th { color:rgba(255,255,255,0.5); font-size:12px; font-weight:600; }
+  .result-table td { color:#fff; }
+
+  /* Wave announce */
+  #wave-announce {
+    display:none; position:fixed; inset:0; z-index:30; pointer-events:none;
+    flex-direction:column; align-items:center; justify-content:center; gap:10px;
+  }
+  #wave-announce-text {
+    font-size:42px; font-weight:900; color:#fff;
+    text-shadow:0 0 50px rgba(124,58,237,0.9),0 0 20px rgba(124,58,237,0.5);
+    letter-spacing:2px; animation:wavePop 0.4s ease;
+  }
+  #wave-announce-sub { font-size:16px; color:rgba(255,255,255,0.7); }
+
+  /* Loading overlay */
+  #loading-overlay {
+    position:fixed; inset:0; z-index:60;
+    background:#0f0f1a; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:16px;
+  }
+  .loading-spinner {
+    width:44px; height:44px; border:3px solid rgba(99,102,241,0.3);
+    border-top-color:#6366F1; border-radius:50%;
+    animation:spin 0.8s linear infinite;
+  }
+
+  @keyframes spin     { to { transform:rotate(360deg); } }
+  @keyframes fadeIn   { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:none; } }
+  @keyframes wavePop  { from { transform:scale(0.6); opacity:0; } to { transform:scale(1); opacity:1; } }
+</style>
 </head>
-<body style="overflow:hidden">
+<body>
 
-<div id="game-page">
-  <!-- Camera + AR -->
-  <video id="camera-feed" autoplay playsinline muted></video>
-  <canvas id="ar-canvas"></canvas>
+<!-- Main game canvas -->
+<canvas id="game-canvas"></canvas>
 
-  <!-- Compass direction bar -->
-  <div id="compass-bar">N</div>
+<!-- Loading screen (shown until game connects) -->
+<div id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div style="font-size:16px;color:rgba(255,255,255,0.6)">게임 연결 중...</div>
+</div>
 
-  <!-- Wave HUD (shown in single mode) -->
-  <div id="wave-hud" style="display:none;position:absolute;top:14px;left:50%;transform:translateX(-50%);
-    background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.15);
-    border-radius:20px;padding:6px 18px;font-size:15px;font-weight:700;color:#fff;z-index:8;white-space:nowrap">
-    <span id="wave-label">웨이브 1 / 5</span>
-  </div>
+<!-- HP HUD -->
+<div id="hud-hp">
+  <span class="label">HP</span>
+  <div id="hp-bar"><div id="hp-fill"></div></div>
+  <span id="hp-num">100</span>
+</div>
 
-  <!-- Team HUD (shown in team mode) -->
-  <div id="team-hud" style="display:none">
-    <span class="team-count-red">🔴 <span id="red-count">?</span></span>
-    <span style="color:rgba(255,255,255,0.4)">vs</span>
-    <span class="team-count-blue">🔵 <span id="blue-count">?</span></span>
-  </div>
+<!-- Ammo HUD -->
+<div id="hud-ammo">
+  <div id="ammo-weapon-name">권총</div>
+  <div><span id="ammo-cur">12</span><span id="ammo-max"> / 12</span></div>
+</div>
 
-  <!-- HUD -->
-  <div id="hud">
-    <div id="hud-top">
-      <!-- HP -->
-      <div class="hud-hp-wrap">
-        <div class="hud-hp-label">HP</div>
-        <div class="hud-hp-bar"><div class="hud-hp-fill" id="hp-fill" style="width:100%;background:#10B981"></div></div>
-        <div class="hud-hp-num" id="hp-num">100</div>
-      </div>
-      <!-- Ammo -->
-      <div class="hud-ammo">
-        <div class="ammo-weapon" id="ammo-weapon-name">권총</div>
-        <div><span class="ammo-current" id="ammo-cur">12</span><span class="ammo-max" id="ammo-max"> / 12</span></div>
-      </div>
-    </div>
+<!-- Wave HUD -->
+<div id="wave-hud"><span id="wave-label">웨이브 1 / 5</span></div>
 
-    <!-- Crosshair -->
-    <div id="hud-mid">
-      <div id="crosshair"><div class="dot"></div></div>
-    </div>
+<!-- Team HUD -->
+<div id="team-hud">
+  <span style="color:#EF4444">🔴 <span id="red-count">0</span></span>
+  <span style="color:rgba(255,255,255,0.35);margin:0 8px">vs</span>
+  <span style="color:#3B82F6">🔵 <span id="blue-count">0</span></span>
+</div>
 
-    <!-- Bottom controls -->
-    <div id="hud-bottom">
-      <div id="radar"></div>
-      <button id="shoot-btn">🔫</button>
-      <button id="reload-btn">재장전</button>
-    </div>
-  </div>
+<!-- Kill feed -->
+<div id="kill-feed"></div>
 
-  <!-- Kill feed -->
-  <div id="kill-feed"></div>
+<!-- Hit flash -->
+<div id="hit-flash"></div>
 
-  <!-- Hit flash overlay -->
-  <div id="hit-flash"></div>
+<!-- Reload button -->
+<button id="reload-btn">재장전</button>
 
-  <!-- Game Over overlay -->
-  <div id="game-over-overlay">
-    <div class="game-over-text">💀 사망</div>
-    <div style="font-size:16px;color:rgba(255,255,255,0.6);margin:12px 0 24px">관전 중...</div>
-    <button class="btn btn-secondary" onclick="location.href='lobby.html'" style="max-width:200px">로비로 돌아가기</button>
-  </div>
+<!-- Wave announcement -->
+<div id="wave-announce">
+  <div id="wave-announce-text"></div>
+  <div id="wave-announce-sub"></div>
+</div>
 
-  <!-- Game Result overlay -->
-  <div id="game-result-overlay">
-    <div class="result-title" id="result-title">게임 종료!</div>
-    <table class="result-table" id="result-table"></table>
-    <div style="display:flex;gap:10px;margin-top:24px;width:100%">
-      <button class="btn btn-secondary" onclick="location.href='lobby.html'">로비</button>
-      <button class="btn btn-primary" onclick="location.href='index.html'">처음부터</button>
-    </div>
-  </div>
+<!-- Game Over overlay -->
+<div id="game-over-overlay">
+  <div style="font-size:64px">💀</div>
+  <div style="font-size:28px;font-weight:900;color:#EF4444">사망</div>
+  <div style="font-size:15px;color:rgba(255,255,255,0.6)">관전 중...</div>
+  <button class="btn btn-secondary" onclick="location.href='lobby.html'"
+    style="max-width:200px;margin-top:8px">로비로 돌아가기</button>
+</div>
 
-  <!-- Wave announcement overlay -->
-  <div id="wave-announce" style="display:none;position:absolute;inset:0;z-index:30;pointer-events:none;
-    display:none;flex-direction:column;align-items:center;justify-content:center;gap:8px">
-    <div id="wave-announce-text" style="font-size:36px;font-weight:900;color:#fff;
-      text-shadow:0 0 40px rgba(124,58,237,0.9);letter-spacing:2px"></div>
-    <div id="wave-announce-sub" style="font-size:16px;color:rgba(255,255,255,0.7)"></div>
-  </div>
-
-  <!-- Permission prompt (iOS) -->
-  <div id="perm-overlay" style="position:absolute;inset:0;z-index:50;background:rgba(0,0,0,0.9);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;gap:16px">
-    <div style="font-size:48px">📱</div>
-    <div style="font-size:20px;font-weight:700;text-align:center">게임 시작 준비</div>
-    <div style="font-size:14px;color:rgba(255,255,255,0.6);text-align:center;line-height:1.6">
-      AR 슈팅 게임은 카메라와 나침반이 필요합니다.<br>아래 버튼을 눌러 권한을 허용해주세요.
-    </div>
-    <button class="btn btn-primary" id="start-perm-btn" style="max-width:280px">🚀 게임 시작!</button>
+<!-- Game Result overlay -->
+<div id="game-result-overlay">
+  <div class="result-title" id="result-title">게임 종료!</div>
+  <table class="result-table" id="result-table"></table>
+  <div style="display:flex;gap:10px;margin-top:16px">
+    <button class="btn btn-secondary" onclick="location.href='lobby.html'">로비</button>
+    <button class="btn btn-primary" onclick="location.href='index.html'">처음부터</button>
   </div>
 </div>
 
 <div id="toast-container"></div>
 <script src="/socket.io/socket.io.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>
