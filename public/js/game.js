@@ -8,7 +8,8 @@ const socket = io();
 
 /* ─── Map constants (mirrors server) ─── */
 const PLAYER_R = 18;
-const BULLET_R = 5;
+const BULLET_R = 6;
+const PLAYER_MAX_HP = 150;
 let   mapW = 1200, mapH = 800;
 let   walls = [];
 
@@ -24,11 +25,11 @@ const MAP_WALLS_FALLBACK = [
 
 /* ─── Weapon config ─── */
 const WEAPONS_CFG = {
-  pistol:  { ammo:12, maxAmmo:12, reloadTime:1000, fireRate:500,  name:'권총',    color:'#FFD700' },
-  shotgun: { ammo:6,  maxAmmo:6,  reloadTime:2000, fireRate:1200, name:'샷건',    color:'#FF6B00' },
-  rifle:   { ammo:30, maxAmmo:30, reloadTime:1800, fireRate:150,  name:'소총',    color:'#6EE7B7' },
-  sniper:  { ammo:5,  maxAmmo:5,  reloadTime:3000, fireRate:2000, name:'저격총',  color:'#60A5FA' },
-  smg:     { ammo:25, maxAmmo:25, reloadTime:1500, fireRate:80,   name:'기관단총',color:'#C084FC' },
+  pistol:  { ammo:15, maxAmmo:15, reloadTime:900,  fireRate:320,  name:'권총',    color:'#FFD700' },
+  shotgun: { ammo:8,  maxAmmo:8,  reloadTime:1700, fireRate:900,  name:'샷건',    color:'#FF6B00' },
+  rifle:   { ammo:35, maxAmmo:35, reloadTime:1500, fireRate:110,  name:'소총',    color:'#6EE7B7' },
+  sniper:  { ammo:6,  maxAmmo:6,  reloadTime:2400, fireRate:1400, name:'저격총',  color:'#60A5FA' },
+  smg:     { ammo:32, maxAmmo:32, reloadTime:1300, fireRate:65,   name:'기관단총',color:'#C084FC' },
 };
 
 /* ─── State ─── */
@@ -170,10 +171,11 @@ function updateAmmoHUD() {
 }
 function updateHpHUD(hp) {
   myHp = hp;
+  const pct = Math.max(0, Math.min(100, (hp/PLAYER_MAX_HP)*100));
   document.getElementById('hp-num').textContent      = hp;
-  document.getElementById('hp-fill').style.width     = hp+'%';
+  document.getElementById('hp-fill').style.width     = pct+'%';
   document.getElementById('hp-fill').style.background =
-    hp>50?'#10B981' : hp>25?'#F59E0B' : '#EF4444';
+    pct>50?'#10B981' : pct>25?'#F59E0B' : '#EF4444';
 }
 
 /* ─── Hit effects ─── */
@@ -538,10 +540,12 @@ function drawPlayers() {
 
     // HP bar
     const bw=40, bh=5, bx=p.x-bw/2, by=p.y+PLAYER_R+5;
+    const maxHp = p.maxHp || (p.isBot ? 100 : PLAYER_MAX_HP);
+    const hpPct = Math.max(0, Math.min(1, p.hp/maxHp));
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(bx-1, by-1, bw+2, bh+2);
-    ctx.fillStyle = p.hp>50?'#10B981' : p.hp>25?'#F59E0B' : '#EF4444';
-    ctx.fillRect(bx, by, bw*(p.hp/100), bh);
+    ctx.fillStyle = hpPct>0.5?'#10B981' : hpPct>0.25?'#F59E0B' : '#EF4444';
+    ctx.fillRect(bx, by, bw*hpPct, bh);
   });
 }
 

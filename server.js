@@ -15,11 +15,12 @@ const rooms = {};
 /* ─── 2D World Constants ─── */
 const GAME_W       = 1200;
 const GAME_H       = 800;
-const PLAYER_SPEED = 190;   // px/s
+const PLAYER_SPEED = 240;   // px/s  (faster movement)
 const PLAYER_R     = 18;
-const BULLET_SPEED = 640;   // px/s
-const BULLET_R     = 5;
+const BULLET_SPEED = 720;   // px/s
+const BULLET_R     = 6;     // slightly bigger hit-box
 const TICK_MS      = 33;    // ~30 Hz
+const PLAYER_MAX_HP = 150;  // more survivability
 
 /* ─── Map ─── */
 const MAP_WALLS = [
@@ -56,18 +57,18 @@ const SPAWN_POSITIONS = [
 
 /* ─── Weapons ─── */
 const WEAPONS = {
-  pistol:  { damage:25, fireRate:500,  ammo:12, spread:0.15, pellets:1 },
-  shotgun: { damage:14, fireRate:1200, ammo:6,  spread:0.40, pellets:7 },
-  rifle:   { damage:30, fireRate:150,  ammo:30, spread:0.07, pellets:1 },
-  sniper:  { damage:95, fireRate:2000, ammo:5,  spread:0.02, pellets:1 },
-  smg:     { damage:18, fireRate:80,   ammo:25, spread:0.24, pellets:1 },
+  pistol:  { damage:22, fireRate:320,  ammo:15, spread:0.06, pellets:1 },
+  shotgun: { damage:12, fireRate:900,  ammo:8,  spread:0.28, pellets:8 },
+  rifle:   { damage:24, fireRate:110,  ammo:35, spread:0.04, pellets:1 },
+  sniper:  { damage:80, fireRate:1400, ammo:6,  spread:0.01, pellets:1 },
+  smg:     { damage:14, fireRate:65,   ammo:32, spread:0.14, pellets:1 },
 };
 
 /* ─── Bots ─── */
 const BOT_DIFF = {
-  easy:   { shootInterval:3200, accuracy:0.45, hp:70,  speed:0.45, name:'초보봇' },
-  normal: { shootInterval:2000, accuracy:0.65, hp:100, speed:0.60, name:'일반봇' },
-  hard:   { shootInterval:1100, accuracy:0.85, hp:130, speed:0.80, name:'강력봇' },
+  easy:   { shootInterval:4500, accuracy:0.25, hp:60,  speed:0.40, dmgMul:0.35, name:'초보봇' },
+  normal: { shootInterval:3000, accuracy:0.40, hp:90,  speed:0.55, dmgMul:0.50, name:'일반봇' },
+  hard:   { shootInterval:1800, accuracy:0.60, hp:120, speed:0.70, dmgMul:0.70, name:'강력봇' },
 };
 
 const BOT_NAMES   = ['철갑','화염','냉기','번개','폭풍','어둠','빛의','강철','독침','용사'];
@@ -108,7 +109,8 @@ function assignPositions(room) {
     p.x     = sp.x + (Math.random()*30 - 15);
     p.y     = sp.y + (Math.random()*30 - 15);
     p.vx    = 0; p.vy = 0; p.angle = 0;
-    p.hp    = p.isBot ? (p.maxHp||100) : 100;
+    p.hp    = p.isBot ? (p.maxHp||100) : PLAYER_MAX_HP;
+    p.maxHp = p.isBot ? (p.maxHp||100) : PLAYER_MAX_HP;
     p.alive = true;
     if (!p.isBot) p.kills = 0;
   });
@@ -131,7 +133,7 @@ function createBot(roomCode, difficulty, wave) {
     team:null, hp, maxHp:hp, alive:true, kills:0,
     x:0, y:0, vx:0, vy:0, angle:0,
     botSpeed:diff.speed, botAccuracy:diff.accuracy,
-    botShootInterval:diff.shootInterval,
+    botShootInterval:diff.shootInterval, botDmgMul:diff.dmgMul||0.5,
     nextShoot: Date.now() + Math.random()*diff.shootInterval*2,
   };
   return botId;
@@ -204,10 +206,11 @@ function startGameLoop(roomCode) {
       // Shoot
       if (now >= bot.nextShoot && dist < 520) {
         bot.nextShoot = now + bot.botShootInterval + Math.random()*800;
-        if (Math.random() < (bot.botAccuracy||0.6)) {
+        if (Math.random() < (bot.botAccuracy||0.4)) {
           const w   = WEAPONS[bot.character.weapon] || WEAPONS.pistol;
-          const pa  = bot.angle + (Math.random()-0.5)*w.spread*(2 - (bot.botAccuracy||0.5));
-          const dmg = Math.max(1, w.damage + Math.floor(Math.random()*6)-3);
+          // Bots have wider spread (less accurate) and reduced damage
+          const pa  = bot.angle + (Math.random()-0.5)*Math.max(w.spread, 0.18)*3;
+          const dmg = Math.max(1, Math.round((w.damage * (bot.botDmgMul||0.5)) + Math.floor(Math.random()*4)-2));
           room.bullets.push({
             id: 'b_'+Math.random().toString(36).substr(2,6),
             shooterId: bot.id,
@@ -256,7 +259,8 @@ function startGameLoop(roomCode) {
     io.to(roomCode).emit('gameState', {
       players: players.map(p => ({
         id:p.id, x:p.x, y:p.y, angle:p.angle||0,
-        hp:p.hp, alive:p.alive, kills:p.kills,
+        hp:p.hp, maxHp:p.maxHp||(p.isBot?100:PLAYER_MAX_HP),
+        alive:p.alive, kills:p.kills,
         name:p.name, team:p.team, isBot:p.isBot,
         character:p.character,
       })),
@@ -299,7 +303,7 @@ function checkWin(room, roomCode) {
           const numBots = Math.min(2+room.wave, 8);
           for (let i=0; i<numBots; i++) createBot(roomCode, room.difficulty, room.wave);
           Object.values(room.players).filter(p=>!p.isBot&&p.alive).forEach(p=>{
-            p.hp = Math.min(100, p.hp+30);
+            p.hp = Math.min(PLAYER_MAX_HP, p.hp+50);
             io.to(p.id).emit('hpRecovered', { hp:p.hp });
           });
           assignPositions(rooms[roomCode]);
@@ -347,7 +351,7 @@ io.on('connection', (socket) => {
     socket.join(code); socket.roomCode = code;
     rooms[code].players[socket.id] = {
       id:socket.id, ...playerData,
-      team:null, hp:100, alive:true, kills:0, x:0, y:0, vx:0, vy:0, angle:0,
+      team:null, hp:PLAYER_MAX_HP, alive:true, kills:0, x:0, y:0, vx:0, vy:0, angle:0,
     };
     const numBots = difficulty==='easy'?3 : difficulty==='normal'?4 : 5;
     for (let i=0; i<numBots; i++) createBot(code, difficulty, 1);
@@ -394,7 +398,7 @@ io.on('connection', (socket) => {
     }
     room.players[socket.id] = {
       id:socket.id, ...playerData, team,
-      hp:100, alive:true, kills:0, x:0, y:0, vx:0, vy:0, angle:0,
+      hp:PLAYER_MAX_HP, alive:true, kills:0, x:0, y:0, vx:0, vy:0, angle:0,
     };
     socket.emit('joinedRoom', {
       playerId:socket.id, room:getRoomPublic(room), myTeam:team, isHost:room.host===socket.id,
@@ -446,7 +450,7 @@ io.on('connection', (socket) => {
       }
       room.players[socket.id] = {
         id:socket.id, ...(playerData||{}), team,
-        hp:100, alive:true, kills:0,
+        hp:PLAYER_MAX_HP, maxHp:PLAYER_MAX_HP, alive:true, kills:0,
         x:sp.x, y:sp.y, vx:0, vy:0, angle:0,
       };
     }
