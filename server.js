@@ -13,8 +13,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 const rooms = {};
 
 /* ─── 2D World Constants ─── */
-const GAME_W       = 1200;
-const GAME_H       = 800;
+const GAME_W       = 1800;
+const GAME_H       = 1200;
 const PLAYER_SPEED = 240;   // px/s  (faster movement)
 const PLAYER_R     = 18;
 const BULLET_SPEED = 720;   // px/s
@@ -29,30 +29,60 @@ const MAP_WALLS = [
   { x:0,         y:GAME_H-20, w:GAME_W, h:20 },
   { x:0,         y:0,         w:20,     h:GAME_H },
   { x:GAME_W-20, y:0,         w:20,     h:GAME_H },
-  // Interior obstacles
-  { x:200, y:80,  w:20, h:220 },
-  { x:200, y:500, w:20, h:220 },
-  { x:380, y:200, w:220, h:20 },
-  { x:600, y:380, w:20, h:220 },
-  { x:800, y:80,  w:20, h:280 },
-  { x:800, y:540, w:20, h:220 },
-  { x:380, y:560, w:220, h:20 },
-  { x:480, y:300, w:120, h:20 },
-  { x:900, y:280, w:220, h:20 },
-  { x:1000,y:480, w:20,  h:220 },
+
+  // Top-left quadrant
+  { x:200,  y:120, w:20,  h:240 },
+  { x:380,  y:260, w:240, h:20  },
+  { x:520,  y:120, w:20,  h:160 },
+  { x:140,  y:480, w:200, h:20  },
+  { x:380,  y:440, w:20,  h:200 },
+
+  // Top-right quadrant
+  { x:1080, y:120, w:20,  h:280 },
+  { x:1240, y:260, w:240, h:20  },
+  { x:1400, y:120, w:20,  h:160 },
+  { x:1560, y:380, w:200, h:20  },
+  { x:1240, y:440, w:20,  h:200 },
+
+  // Center pillars / arena cover
+  { x:780,  y:380, w:240, h:20  },
+  { x:780,  y:380, w:20,  h:140 },
+  { x:1000, y:500, w:20,  h:140 },
+  { x:780,  y:620, w:240, h:20  },
+  { x:880,  y:480, w:40,  h:40  }, // center pillar
+
+  // Bottom-left quadrant
+  { x:200,  y:720, w:20,  h:240 },
+  { x:380,  y:840, w:240, h:20  },
+  { x:520,  y:880, w:20,  h:160 },
+  { x:140,  y:1040,w:200, h:20  },
+
+  // Bottom-right quadrant
+  { x:1080, y:780, w:20,  h:280 },
+  { x:1240, y:840, w:240, h:20  },
+  { x:1400, y:880, w:20,  h:160 },
+  { x:1560, y:1040,w:200, h:20  },
+
+  // Diagonal corridor walls
+  { x:680,  y:120, w:20,  h:160 },
+  { x:1120, y:920, w:20,  h:160 },
 ];
 
 const SPAWN_POSITIONS = [
-  { x:80,        y:80        },
-  { x:GAME_W-80, y:80        },
-  { x:80,        y:GAME_H-80 },
-  { x:GAME_W-80, y:GAME_H-80 },
-  { x:GAME_W/2,  y:60        },
-  { x:60,        y:GAME_H/2  },
-  { x:GAME_W-60, y:GAME_H/2  },
-  { x:GAME_W/2,  y:GAME_H-60 },
-  { x:350,       y:350       },
-  { x:850,       y:430       },
+  { x:80,         y:80         },
+  { x:GAME_W-80,  y:80         },
+  { x:80,         y:GAME_H-80  },
+  { x:GAME_W-80,  y:GAME_H-80  },
+  { x:GAME_W/2,   y:60         },
+  { x:60,         y:GAME_H/2   },
+  { x:GAME_W-60,  y:GAME_H/2   },
+  { x:GAME_W/2,   y:GAME_H-60  },
+  { x:300,        y:380        },
+  { x:GAME_W-300, y:380        },
+  { x:300,        y:GAME_H-380 },
+  { x:GAME_W-300, y:GAME_H-380 },
+  { x:GAME_W/2,   y:GAME_H/2-120 },
+  { x:GAME_W/2,   y:GAME_H/2+120 },
 ];
 
 /* ─── Weapons ─── */

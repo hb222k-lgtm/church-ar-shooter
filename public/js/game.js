@@ -10,17 +10,12 @@ const socket = io();
 const PLAYER_R = 18;
 const BULLET_R = 6;
 const PLAYER_MAX_HP = 150;
-let   mapW = 1200, mapH = 800;
+let   mapW = 1800, mapH = 1200;
 let   walls = [];
 
 const MAP_WALLS_FALLBACK = [
-  { x:0,    y:0,   w:1200, h:20  }, { x:0,    y:780, w:1200, h:20  },
-  { x:0,    y:0,   w:20,   h:800 }, { x:1180, y:0,   w:20,   h:800 },
-  { x:200,  y:80,  w:20,   h:220 }, { x:200,  y:500, w:20,   h:220 },
-  { x:380,  y:200, w:220,  h:20  }, { x:600,  y:380, w:20,   h:220 },
-  { x:800,  y:80,  w:20,   h:280 }, { x:800,  y:540, w:20,   h:220 },
-  { x:380,  y:560, w:220,  h:20  }, { x:480,  y:300, w:120,  h:20  },
-  { x:900,  y:280, w:220,  h:20  }, { x:1000, y:480, w:20,   h:220 },
+  { x:0,y:0,w:1800,h:20 }, { x:0,y:1180,w:1800,h:20 },
+  { x:0,y:0,w:20,h:1200 }, { x:1780,y:0,w:20,h:1200 },
 ];
 
 /* ─── Weapon config ─── */
@@ -74,10 +69,12 @@ window.addEventListener('mousedown', e => {
 });
 window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
 
-/* ─── Touch / virtual joystick ─── */
-const JOY_R = 58;
-const joy    = { active:false, id:null, bx:0, by:0, cx:0, cy:0, dx:0, dy:0 };
-const rtouch = { active:false, id:null, x:0, y:0 };
+/* ─── Touch / dual virtual joysticks ─── */
+const JOY_R     = 62;   // move stick max radius
+const AIM_R     = 70;   // aim stick max radius
+const AIM_DEAD  = 14;   // dead-zone before firing starts
+const joy   = { active:false, id:null, bx:0, by:0, cx:0, cy:0, dx:0, dy:0 };
+const aim   = { active:false, id:null, bx:0, by:0, cx:0, cy:0, dist:0 };
 let   touchFire = false;
 
 canvas.addEventListener('touchstart', onTS, { passive:false });
@@ -89,16 +86,17 @@ function onTS(e) {
   e.preventDefault();
   for (const t of e.changedTouches) {
     if (t.clientX < canvas.width/2 && !joy.active) {
+      // LEFT side: movement joystick
       joy.active = true; joy.id = t.identifier;
       joy.bx = t.clientX; joy.by = t.clientY;
       joy.cx = t.clientX; joy.cy = t.clientY;
       joy.dx = 0; joy.dy = 0;
-    } else if (t.clientX >= canvas.width/2 && !rtouch.active) {
-      rtouch.active = true; rtouch.id = t.identifier;
-      rtouch.x = t.clientX; rtouch.y = t.clientY;
-      touchFire = true;
-      aimAngle = Math.atan2(t.clientY - canvas.height/2, t.clientX - canvas.width/2);
-      tryShoot();
+    } else if (t.clientX >= canvas.width/2 && !aim.active) {
+      // RIGHT side: aim joystick — touch anywhere, drag in direction to fire
+      aim.active = true; aim.id = t.identifier;
+      aim.bx = t.clientX; aim.by = t.clientY;
+      aim.cx = t.clientX; aim.cy = t.clientY;
+      aim.dist = 0;
     }
   }
 }
@@ -111,9 +109,17 @@ function onTM(e) {
       const d  = Math.hypot(dx, dy);
       joy.dx = d > 0 ? dx/Math.max(d, JOY_R) : 0;
       joy.dy = d > 0 ? dy/Math.max(d, JOY_R) : 0;
-    } else if (t.identifier === rtouch.id) {
-      rtouch.x = t.clientX; rtouch.y = t.clientY;
-      aimAngle = Math.atan2(t.clientY - canvas.height/2, t.clientX - canvas.width/2);
+    } else if (t.identifier === aim.id) {
+      aim.cx = t.clientX; aim.cy = t.clientY;
+      const dx = t.clientX - aim.bx, dy = t.clientY - aim.by;
+      const d  = Math.hypot(dx, dy);
+      aim.dist = d;
+      if (d > AIM_DEAD) {
+        aimAngle  = Math.atan2(dy, dx);
+        touchFire = true;
+      } else {
+        touchFire = false;
+      }
     }
   }
 }
@@ -123,8 +129,8 @@ function onTE(e) {
     if (t.identifier === joy.id) {
       joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0;
     }
-    if (t.identifier === rtouch.id) {
-      rtouch.active = false; rtouch.id = null; touchFire = false;
+    if (t.identifier === aim.id) {
+      aim.active = false; aim.id = null; aim.dist = 0; touchFire = false;
     }
   }
 }
@@ -490,8 +496,10 @@ function render(dt) {
   ctx.restore();
 
   drawMinimap();
-  if (!isDead && gameActive) drawCrosshair();
+  // Only draw the center crosshair when not using the on-screen aim stick
+  if (!isDead && gameActive && !aim.active) drawCrosshair();
   drawJoystick();
+  drawAimReticle();
 }
 
 /* ─── Draw Map ─── */
@@ -721,22 +729,110 @@ function drawCrosshair() {
   ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fill();
 }
 
-/* ─── Virtual joystick ─── */
+/* ─── World aim reticle (shows where bullets will go) ─── */
+function drawAimReticle() {
+  if (isDead || !gameActive) return;
+  const me = gameState.players.find(p=>p.id===myId);
+  if (!me) return;
+
+  // Project a reticle ~280 world-units in front of the player
+  const len = 280;
+  const useAng = cheatActive ? cheatAngle : aimAngle;
+  const tx = me.x + Math.cos(useAng)*len - camX;
+  const ty = me.y + Math.sin(useAng)*len - camY;
+
+  // Skip if off-screen
+  if (tx < 0 || ty < 0 || tx > canvas.width || ty > canvas.height) return;
+
+  ctx.save();
+  ctx.translate(tx, ty);
+
+  // Pulsing outer ring
+  const pulse = 1 + Math.sin(Date.now()/180)*0.12;
+  ctx.beginPath();
+  ctx.arc(0, 0, 16*pulse, 0, Math.PI*2);
+  ctx.strokeStyle = aim.active && touchFire
+    ? 'rgba(252,165,165,0.95)'
+    : 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Inner cross
+  ctx.beginPath();
+  ctx.moveTo(-10, 0); ctx.lineTo(-3, 0);
+  ctx.moveTo( 3, 0); ctx.lineTo(10, 0);
+  ctx.moveTo(0,-10); ctx.lineTo(0,-3);
+  ctx.moveTo(0,  3); ctx.lineTo(0, 10);
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(0, 0, 2, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,1)';
+  ctx.fill();
+  ctx.restore();
+}
+
+/* ─── Virtual joysticks (movement + aim) ─── */
 function drawJoystick() {
-  if (!joy.active) return;
-  const bx=joy.bx, by=joy.by;
-  const dx=joy.cx-bx, dy=joy.cy-by;
-  const d=Math.min(Math.hypot(dx,dy),JOY_R);
-  const a=Math.atan2(dy,dx);
-  const kx=bx+Math.cos(a)*d, ky=by+Math.sin(a)*d;
+  // Move stick (left)
+  if (joy.active) {
+    const bx=joy.bx, by=joy.by;
+    const dx=joy.cx-bx, dy=joy.cy-by;
+    const d=Math.min(Math.hypot(dx,dy),JOY_R);
+    const a=Math.atan2(dy,dx);
+    const kx=bx+Math.cos(a)*d, ky=by+Math.sin(a)*d;
 
-  ctx.beginPath(); ctx.arc(bx,by,JOY_R,0,Math.PI*2);
-  ctx.strokeStyle='rgba(255,255,255,0.22)'; ctx.lineWidth=2; ctx.stroke();
-  ctx.fillStyle='rgba(255,255,255,0.04)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(bx,by,JOY_R,0,Math.PI*2);
+    ctx.strokeStyle='rgba(110,231,183,0.4)'; ctx.lineWidth=2.5; ctx.stroke();
+    ctx.fillStyle='rgba(16,185,129,0.06)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(kx,ky,JOY_R*0.38,0,Math.PI*2);
+    ctx.fillStyle='rgba(110,231,183,0.35)'; ctx.fill();
+    ctx.strokeStyle='rgba(110,231,183,0.7)'; ctx.lineWidth=1.5; ctx.stroke();
+  }
 
-  ctx.beginPath(); ctx.arc(kx,ky,JOY_R*0.38,0,Math.PI*2);
-  ctx.fillStyle='rgba(255,255,255,0.28)'; ctx.fill();
-  ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=1.5; ctx.stroke();
+  // Aim stick (right)
+  if (aim.active) {
+    const bx=aim.bx, by=aim.by;
+    const dx=aim.cx-bx, dy=aim.cy-by;
+    const d = Math.min(Math.hypot(dx,dy), AIM_R);
+    const a = Math.atan2(dy, dx);
+    const kx=bx+Math.cos(a)*d, ky=by+Math.sin(a)*d;
+
+    // Outer ring
+    ctx.beginPath(); ctx.arc(bx,by,AIM_R,0,Math.PI*2);
+    ctx.strokeStyle = touchFire ? 'rgba(252,165,165,0.7)' : 'rgba(252,165,165,0.4)';
+    ctx.lineWidth=2.5; ctx.stroke();
+    ctx.fillStyle='rgba(239,68,68,0.06)'; ctx.fill();
+
+    // Dead zone
+    ctx.beginPath(); ctx.arc(bx,by,AIM_DEAD,0,Math.PI*2);
+    ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1; ctx.stroke();
+
+    // Direction line
+    if (touchFire) {
+      ctx.beginPath();
+      ctx.moveTo(bx,by);
+      ctx.lineTo(bx+Math.cos(a)*AIM_R, by+Math.sin(a)*AIM_R);
+      ctx.strokeStyle='rgba(252,165,165,0.55)';
+      ctx.lineWidth=2; ctx.stroke();
+    }
+
+    // Knob
+    ctx.beginPath(); ctx.arc(kx,ky,AIM_R*0.34,0,Math.PI*2);
+    ctx.fillStyle = touchFire ? 'rgba(252,165,165,0.55)' : 'rgba(252,165,165,0.3)';
+    ctx.fill();
+    ctx.strokeStyle = touchFire ? '#fff' : 'rgba(252,165,165,0.7)';
+    ctx.lineWidth=1.8; ctx.stroke();
+
+    // Crosshair icon in knob
+    ctx.beginPath();
+    ctx.moveTo(kx-6, ky); ctx.lineTo(kx+6, ky);
+    ctx.moveTo(kx, ky-6); ctx.lineTo(kx, ky+6);
+    ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=1.4; ctx.stroke();
+  }
 }
 
 /* ─── Utility ─── */
