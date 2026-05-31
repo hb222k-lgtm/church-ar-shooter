@@ -178,6 +178,34 @@
 <!-- Reload button -->
 <button id="reload-btn">재장전</button>
 
+<!-- CHEAT button -->
+<button id="cheat-btn" title="난사 모드 (4초)">🌀<br><span style="font-size:9px">치트</span></button>
+<style>
+  #cheat-btn {
+    position:fixed; bottom:96px; right:24px; z-index:12;
+    width:58px; height:58px; border-radius:50%;
+    background:linear-gradient(135deg,#7C3AED,#EC4899);
+    border:2px solid rgba(255,255,255,0.4); color:#fff;
+    font-size:18px; font-weight:700; cursor:pointer; padding:0;
+    box-shadow:0 0 24px rgba(236,72,153,0.55);
+    touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+    transition:transform 0.1s;
+  }
+  #cheat-btn:active { transform:scale(0.92); }
+  #cheat-btn.cooldown {
+    background:rgba(60,60,80,0.7); box-shadow:none;
+    border-color:rgba(255,255,255,0.15); color:rgba(255,255,255,0.5);
+  }
+  #cheat-btn.active {
+    animation:cheatPulse 0.3s ease-in-out infinite;
+    box-shadow:0 0 40px rgba(236,72,153,0.9);
+  }
+  @keyframes cheatPulse {
+    0%,100% { transform:scale(1); }
+    50%     { transform:scale(1.12); }
+  }
+</style>
+
 <!-- Wave announcement -->
 <div id="wave-announce">
   <div id="wave-announce-text"></div>

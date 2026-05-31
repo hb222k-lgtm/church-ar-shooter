@@ -58,6 +58,7 @@ const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyR' && !isReloading) startReload();
+  if (e.code === 'KeyC') triggerCheat();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
@@ -161,6 +162,7 @@ function startReload() {
 }
 
 document.getElementById('reload-btn').addEventListener('click', startReload);
+document.getElementById('cheat-btn').addEventListener('click', triggerCheat);
 
 /* ─── HUD ─── */
 function updateAmmoHUD() {
@@ -180,6 +182,66 @@ function updateHpHUD(hp) {
 
 /* ─── Hit effects ─── */
 const hitEffects = [];
+
+/* ─── CHEAT MODE: spinning rampage ─── */
+const CHEAT_DURATION = 4000;   // 4 seconds of madness
+const CHEAT_COOLDOWN = 12000;  // 12 second cooldown
+const CHEAT_SPIN_SPEED = 7.5;  // rad/s (~1.2 full rotations / sec)
+const CHEAT_FIRE_MS = 55;      // shoot every 55ms during cheat
+let cheatActive  = false;
+let cheatEndAt   = 0;
+let cheatCDUntil = 0;
+let cheatLastShot = 0;
+let cheatAngle = 0;
+
+function triggerCheat() {
+  if (cheatActive || isDead || !gameActive) return;
+  const now = Date.now();
+  if (now < cheatCDUntil) {
+    toast(`⏱️ 쿨다운 ${Math.ceil((cheatCDUntil-now)/1000)}초`, 1200);
+    return;
+  }
+  cheatActive  = true;
+  cheatEndAt   = now + CHEAT_DURATION;
+  cheatCDUntil = now + CHEAT_DURATION + CHEAT_COOLDOWN;
+  cheatAngle   = aimAngle;
+  document.getElementById('cheat-btn').classList.add('active');
+  toast('🌀 난사 모드!', 1200);
+}
+
+function updateCheatBtn() {
+  const btn = document.getElementById('cheat-btn');
+  if (!btn) return;
+  const now = Date.now();
+  if (cheatActive) return; // class already set
+  if (now < cheatCDUntil) {
+    btn.classList.add('cooldown');
+    btn.classList.remove('active');
+    const sec = Math.ceil((cheatCDUntil-now)/1000);
+    btn.innerHTML = `${sec}s<br><span style="font-size:9px">대기</span>`;
+  } else {
+    btn.classList.remove('cooldown');
+    btn.classList.remove('active');
+    btn.innerHTML = `🌀<br><span style="font-size:9px">치트</span>`;
+  }
+}
+
+function tickCheat(dt) {
+  if (!cheatActive) return;
+  const now = Date.now();
+  if (now >= cheatEndAt) {
+    cheatActive = false;
+    document.getElementById('cheat-btn').classList.remove('active');
+    return;
+  }
+  // Spin the gun
+  cheatAngle += CHEAT_SPIN_SPEED * dt;
+  // Force-shoot (bypasses fire-rate / ammo)
+  if (now - cheatLastShot >= CHEAT_FIRE_MS) {
+    cheatLastShot = now;
+    socket.emit('shoot', { angle: cheatAngle, weapon: myWeapon });
+  }
+}
 
 /* ─── Resize ─── */
 function resize() {
@@ -377,7 +439,10 @@ function sendInput() {
   const len = Math.hypot(dx,dy);
   if (len > 1) { dx/=len; dy/=len; }
 
-  if (!isDead) socket.emit('moveInput', { dx, dy, angle: aimAngle });
+  if (!isDead) socket.emit('moveInput', {
+    dx, dy,
+    angle: cheatActive ? cheatAngle : aimAngle,
+  });
 }
 
 /* ─── Main game loop ─── */
@@ -388,7 +453,9 @@ function gameLoop(now) {
   lastFrame = now;
 
   sendInput();
-  if (mouseDown || touchFire) tryShoot();
+  if (!cheatActive && (mouseDown || touchFire)) tryShoot();
+  tickCheat(dt);
+  updateCheatBtn();
   updateCamera();
   render(dt);
 }
@@ -521,9 +588,26 @@ function drawPlayers() {
       ctx.strokeStyle = 'rgba(255,255,255,0.17)'; ctx.lineWidth=1; ctx.stroke();
     }
 
-    // Gun barrel
-    const cos = Math.cos(p.angle), sin = Math.sin(p.angle);
+    // Gun barrel (spin when cheating, for self)
+    const useAngle = (isMe && cheatActive) ? cheatAngle : p.angle;
+    const cos = Math.cos(useAngle), sin = Math.sin(useAngle);
     const gs  = PLAYER_R*0.45, ge = PLAYER_R+15;
+
+    // Cheat aura: rainbow swirl ring around self
+    if (isMe && cheatActive) {
+      const t = (Date.now() % 1000) / 1000;
+      for (let k=0; k<6; k++) {
+        const a = useAngle + k*Math.PI/3 + t*Math.PI*2;
+        const rr = PLAYER_R + 8 + Math.sin(t*Math.PI*2 + k)*3;
+        ctx.beginPath();
+        ctx.arc(p.x+Math.cos(a)*rr, p.y+Math.sin(a)*rr, 4, 0, Math.PI*2);
+        ctx.fillStyle = `hsl(${(k*60 + t*360)%360}, 90%, 60%)`;
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+    }
     ctx.beginPath();
     ctx.moveTo(p.x+cos*gs, p.y+sin*gs);
     ctx.lineTo(p.x+cos*ge, p.y+sin*ge);
