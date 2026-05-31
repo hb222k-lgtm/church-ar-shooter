@@ -186,8 +186,8 @@ const hitEffects = [];
 /* ─── CHEAT MODE: spinning rampage ─── */
 const CHEAT_DURATION = 4000;   // 4 seconds of madness
 const CHEAT_COOLDOWN = 12000;  // 12 second cooldown
-const CHEAT_SPIN_SPEED = 7.5;  // rad/s (~1.2 full rotations / sec)
-const CHEAT_FIRE_MS = 55;      // shoot every 55ms during cheat
+const CHEAT_SPIN_SPEED = 5.2;  // rad/s — slower so bullets cluster tighter
+const CHEAT_FIRE_MS = 22;      // shoot every 22ms → ~45 bullets/sec (denser)
 let cheatActive  = false;
 let cheatEndAt   = 0;
 let cheatCDUntil = 0;
@@ -236,10 +236,12 @@ function tickCheat(dt) {
   }
   // Spin the gun
   cheatAngle += CHEAT_SPIN_SPEED * dt;
-  // Force-shoot (bypasses fire-rate / ammo)
+  // Force-shoot (bypasses fire-rate / ammo, low-damage)
   if (now - cheatLastShot >= CHEAT_FIRE_MS) {
     cheatLastShot = now;
-    socket.emit('shoot', { angle: cheatAngle, weapon: myWeapon });
+    // Fire two pellets per tick at small angular offset for a thicker stream
+    socket.emit('shoot', { angle: cheatAngle,         weapon: myWeapon, cheat:true });
+    socket.emit('shoot', { angle: cheatAngle + 0.06,  weapon: myWeapon, cheat:true });
   }
 }
 

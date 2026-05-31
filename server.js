@@ -478,7 +478,7 @@ io.on('connection', (socket) => {
   });
 
   /* ── Shoot ── */
-  socket.on('shoot', ({ angle, weapon }) => {
+  socket.on('shoot', ({ angle, weapon, cheat }) => {
     const room = rooms[socket.roomCode];
     if (!room || room.status !== 'playing') return;
     const shooter = room.players[socket.id];
@@ -488,6 +488,20 @@ io.on('connection', (socket) => {
     const sa   = angle ?? shooter.angle;
     const ox   = shooter.x + Math.cos(sa)*(PLAYER_R+6);
     const oy   = shooter.y + Math.sin(sa)*(PLAYER_R+6);
+
+    // Cheat shots: only 1 pellet, very low damage, no spread, shorter range
+    if (cheat) {
+      const dmg = Math.max(1, Math.round(w.damage * 0.12)); // ~12% of base damage
+      room.bullets.push({
+        id:'b_'+Math.random().toString(36).substr(2,6),
+        shooterId:socket.id,
+        x:ox, y:oy,
+        vx:Math.cos(sa)*BULLET_SPEED*0.95,
+        vy:Math.sin(sa)*BULLET_SPEED*0.95,
+        damage:dmg, weapon, life:1.0, cheat:true,
+      });
+      return;
+    }
 
     const pellets = weapon==='shotgun' ? (w.pellets||7) : 1;
     for (let i=0; i<pellets; i++) {
