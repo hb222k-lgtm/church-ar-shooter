@@ -70,9 +70,9 @@ window.addEventListener('mousedown', e => {
 window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
 
 /* ─── Touch / dual virtual joysticks ─── */
-const JOY_R     = 62;   // move stick max radius
-const AIM_R     = 70;   // aim stick max radius
-const AIM_DEAD  = 14;   // dead-zone before firing starts
+const JOY_R     = 58;   // move stick max radius
+const AIM_R     = 48;   // aim stick max radius (smaller = tighter aim feel)
+const AIM_DEAD  = 10;   // dead-zone before firing starts
 const joy   = { active:false, id:null, bx:0, by:0, cx:0, cy:0, dx:0, dy:0 };
 const aim   = { active:false, id:null, bx:0, by:0, cx:0, cy:0, dist:0 };
 let   touchFire = false;
@@ -84,6 +84,8 @@ canvas.addEventListener('touchcancel',onTE, { passive:false });
 
 function onTS(e) {
   e.preventDefault();
+  const hint = document.getElementById('touch-hint');
+  if (hint && hint.style.display !== 'none') hint.style.display = 'none';
   for (const t of e.changedTouches) {
     if (t.clientX < canvas.width/2 && !joy.active) {
       // LEFT side: movement joystick
@@ -335,6 +337,16 @@ socket.on('gameRejoined', data => {
 
   document.getElementById('loading-overlay').style.display = 'none';
   gameActive = true;
+
+  // Show touch hint on mobile
+  if ('ontouchstart' in window) {
+    const hint = document.getElementById('touch-hint');
+    if (hint) {
+      hint.style.display = 'flex';
+      setTimeout(() => hint.style.display = 'none', 6000);
+    }
+  }
+
   requestAnimationFrame(gameLoop);
 });
 
@@ -621,7 +633,7 @@ function drawPlayers() {
     ctx.beginPath();
     ctx.moveTo(p.x+cos*gs, p.y+sin*gs);
     ctx.lineTo(p.x+cos*ge, p.y+sin*ge);
-    ctx.strokeStyle = '#D1D5DB'; ctx.lineWidth=4.5; ctx.lineCap='round'; ctx.stroke();
+    ctx.strokeStyle = '#D1D5DB'; ctx.lineWidth=3; ctx.lineCap='round'; ctx.stroke();
     ctx.beginPath(); ctx.arc(p.x+cos*ge, p.y+sin*ge, 2.5, 0, Math.PI*2);
     ctx.fillStyle = '#fff'; ctx.fill();
 
@@ -735,42 +747,35 @@ function drawAimReticle() {
   const me = gameState.players.find(p=>p.id===myId);
   if (!me) return;
 
-  // Project a reticle ~280 world-units in front of the player
-  const len = 280;
   const useAng = cheatActive ? cheatAngle : aimAngle;
-  const tx = me.x + Math.cos(useAng)*len - camX;
-  const ty = me.y + Math.sin(useAng)*len - camY;
 
-  // Skip if off-screen
-  if (tx < 0 || ty < 0 || tx > canvas.width || ty > canvas.height) return;
+  // Short laser line from player → small dot at the end
+  const start = PLAYER_R + 18;
+  const len   = 110;  // closer = easier to read
+  const sx = me.x + Math.cos(useAng)*start - camX;
+  const sy = me.y + Math.sin(useAng)*start - camY;
+  const tx = me.x + Math.cos(useAng)*(start+len) - camX;
+  const ty = me.y + Math.sin(useAng)*(start+len) - camY;
 
+  // Dashed thin guide line
   ctx.save();
-  ctx.translate(tx, ty);
-
-  // Pulsing outer ring
-  const pulse = 1 + Math.sin(Date.now()/180)*0.12;
+  ctx.setLineDash([4, 5]);
   ctx.beginPath();
-  ctx.arc(0, 0, 16*pulse, 0, Math.PI*2);
-  ctx.strokeStyle = aim.active && touchFire
-    ? 'rgba(252,165,165,0.95)'
-    : 'rgba(255,255,255,0.7)';
-  ctx.lineWidth = 2;
+  ctx.moveTo(sx, sy); ctx.lineTo(tx, ty);
+  ctx.strokeStyle = touchFire ? 'rgba(252,165,165,0.85)' : 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 1.4;
   ctx.stroke();
+  ctx.setLineDash([]);
 
-  // Inner cross
+  // Small reticle dot at tip
   ctx.beginPath();
-  ctx.moveTo(-10, 0); ctx.lineTo(-3, 0);
-  ctx.moveTo( 3, 0); ctx.lineTo(10, 0);
-  ctx.moveTo(0,-10); ctx.lineTo(0,-3);
-  ctx.moveTo(0,  3); ctx.lineTo(0, 10);
-  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-  ctx.lineWidth = 1.5;
+  ctx.arc(tx, ty, 5, 0, Math.PI*2);
+  ctx.strokeStyle = touchFire ? 'rgba(252,165,165,1)' : 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 1.8;
   ctx.stroke();
-
-  // Center dot
   ctx.beginPath();
-  ctx.arc(0, 0, 2, 0, Math.PI*2);
-  ctx.fillStyle = 'rgba(255,255,255,1)';
+  ctx.arc(tx, ty, 1.5, 0, Math.PI*2);
+  ctx.fillStyle = '#fff';
   ctx.fill();
   ctx.restore();
 }

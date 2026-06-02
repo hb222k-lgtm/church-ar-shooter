@@ -68,21 +68,20 @@ const MAP_WALLS = [
   { x:1120, y:920, w:20,  h:160 },
 ];
 
+// All spawns hand-verified to be clear of walls (player radius = 18)
 const SPAWN_POSITIONS = [
-  { x:80,         y:80         },
-  { x:GAME_W-80,  y:80         },
-  { x:80,         y:GAME_H-80  },
-  { x:GAME_W-80,  y:GAME_H-80  },
-  { x:GAME_W/2,   y:60         },
-  { x:60,         y:GAME_H/2   },
-  { x:GAME_W-60,  y:GAME_H/2   },
-  { x:GAME_W/2,   y:GAME_H-60  },
-  { x:300,        y:380        },
-  { x:GAME_W-300, y:380        },
-  { x:300,        y:GAME_H-380 },
-  { x:GAME_W-300, y:GAME_H-380 },
-  { x:GAME_W/2,   y:GAME_H/2-120 },
-  { x:GAME_W/2,   y:GAME_H/2+120 },
+  { x:80,    y:80   },  // top-left corner
+  { x:1720,  y:80   },  // top-right corner
+  { x:80,    y:1120 },  // bottom-left corner
+  { x:1720,  y:1120 },  // bottom-right corner
+  { x:900,   y:80   },  // top-center
+  { x:80,    y:600  },  // mid-left
+  { x:1720,  y:600  },  // mid-right
+  { x:900,   y:1120 },  // bottom-center
+  { x:300,   y:600  },  // left arena
+  { x:1500,  y:600  },  // right arena
+  { x:680,   y:80   },  // top mid-left
+  { x:1120,  y:1120 },  // bottom mid-right
 ];
 
 /* ─── Weapons ─── */

@@ -206,6 +206,25 @@
   }
 </style>
 
+<!-- Touch controls hint -->
+<div id="touch-hint" style="position:fixed;inset:0;z-index:35;pointer-events:none;
+  display:none;flex-direction:row;align-items:flex-end;justify-content:space-between;
+  padding:0 32px 110px;color:rgba(255,255,255,0.85);font-size:13px;font-weight:700;
+  text-shadow:0 2px 6px rgba(0,0,0,0.9);">
+  <div style="text-align:center">
+    <div style="font-size:38px;margin-bottom:6px">👈</div>
+    <div style="background:rgba(16,185,129,0.25);border:1px solid #6EE7B7;border-radius:10px;padding:6px 12px">
+      왼쪽 손가락<br><span style="font-size:11px;opacity:0.8">이동</span>
+    </div>
+  </div>
+  <div style="text-align:center">
+    <div style="font-size:38px;margin-bottom:6px">👉</div>
+    <div style="background:rgba(239,68,68,0.25);border:1px solid #FCA5A5;border-radius:10px;padding:6px 12px">
+      오른쪽 손가락<br><span style="font-size:11px;opacity:0.8">조준 + 발사</span>
+    </div>
+  </div>
+</div>
+
 <!-- Wave announcement -->
 <div id="wave-announce">
   <div id="wave-announce-text"></div>
