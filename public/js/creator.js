@@ -21,15 +21,15 @@ const ACCENT_COLORS = [
 ];
 
 const CHASSIS = [
-  { key:'light',  icon:'🏎️', name:'경전차', desc:'빠르고 가벼움',
+  { key:'light',  icon:'🏎️', name:'경전차',   desc:'HP 500 · 속도 +30%',
     w:32, h:40, tw:18, th:20, barL:22, barW:3.5 },
-  { key:'medium', icon:'🛡️', name:'중형전차', desc:'균형 잡힘',
+  { key:'medium', icon:'🛡️', name:'중형전차', desc:'HP 700 · 균형형 (기본)',
     w:38, h:46, tw:22, th:24, barL:26, barW:4 },
-  { key:'heavy',  icon:'🪖', name:'중전차', desc:'두꺼운 장갑',
+  { key:'heavy',  icon:'🪖', name:'중전차',   desc:'HP 1000 · 속도 -28%',
     w:46, h:54, tw:28, th:30, barL:28, barW:5 },
-  { key:'sniper', icon:'🎯', name:'저격전차', desc:'긴 포신',
+  { key:'sniper', icon:'🎯', name:'저격전차', desc:'HP 600 · 데미지 +35%',
     w:32, h:44, tw:18, th:20, barL:40, barW:3 },
-  { key:'scout',  icon:'📡', name:'정찰전차', desc:'민첩한 정찰',
+  { key:'scout',  icon:'📡', name:'정찰전차', desc:'HP 550 · 속도 +25%',
     w:28, h:36, tw:16, th:18, barL:20, barW:3 },
 ];
 

@@ -9,7 +9,20 @@ const socket = io();
 /* ─── Map constants (mirrors server) ─── */
 const PLAYER_R = 22;
 const BULLET_R = 6;
-const PLAYER_MAX_HP = 1500;
+const PLAYER_MAX_HP = 700;
+
+/* ─── Chassis stats (mirrors server) ─── */
+const CHASSIS_STATS = {
+  light:   { hp:500,  speedMul:1.30, dmgMul:0.85 },
+  medium:  { hp:700,  speedMul:1.00, dmgMul:1.00 },
+  heavy:   { hp:1000, speedMul:0.72, dmgMul:1.15 },
+  sniper:  { hp:600,  speedMul:0.95, dmgMul:1.35 },
+  scout:   { hp:550,  speedMul:1.25, dmgMul:0.90 },
+};
+function getMyChassis() {
+  const char = JSON.parse(sessionStorage.getItem('char')||'{}');
+  return CHASSIS_STATS[char.chassis || char.hairStyle || 'medium'] || CHASSIS_STATS.medium;
+}
 
 /* ─── Tank chassis catalog ─── */
 const TANK_CHASSIS = {
@@ -158,6 +171,11 @@ function tryShoot() {
   ammo--;
   updateAmmoHUD();
   socket.emit('shoot', { angle: aimAngle, weapon: myWeapon });
+  // Local feedback: sound, screen shake, gun recoil
+  playShot(myWeapon, 1);
+  const shake = ({ pistol:1.4, shotgun:5, rifle:1.2, sniper:6, smg:0.9 })[myWeapon] || 1.5;
+  addShake(shake);
+  recoilOffset[myId] = { amount: 7, weapon: myWeapon };
   if (ammo <= 0) startReload();
 }
 
@@ -198,7 +216,176 @@ function updateHpHUD(hp) {
 }
 
 /* ─── Hit effects ─── */
-const hitEffects = [];
+const hitEffects   = [];
+const explosions   = [];   // expanding rings on player death
+const recoilOffset = {};   // playerId → {amount, decay}
+
+/* ─── Screen shake ─── */
+let shakeAmt = 0;
+function addShake(amount) { shakeAmt = Math.min(28, shakeAmt + amount); }
+
+/* ─── WebAudio sound system (procedural — no external assets) ─── */
+let audioCtx = null;
+let masterGain = null;
+let bgmGain = null;
+let bgmStarted = false;
+let bgmNodes = [];
+
+function ensureAudio() {
+  if (audioCtx) return audioCtx;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.45;
+    masterGain.connect(audioCtx.destination);
+    bgmGain = audioCtx.createGain();
+    bgmGain.gain.value = 0.16;
+    bgmGain.connect(masterGain);
+  } catch (e) { console.warn('No audio', e); }
+  return audioCtx;
+}
+
+// Initialize audio after first user gesture (browser autoplay policy)
+['click','touchstart','keydown'].forEach(ev => {
+  window.addEventListener(ev, () => {
+    ensureAudio();
+    if (audioCtx?.state === 'suspended') audioCtx.resume();
+    if (!bgmStarted) { startBGM(); bgmStarted = true; }
+  }, { once:true });
+});
+
+/* Procedural gun shot — weapon-specific timbres */
+function playShot(weapon, distAttenuation=1) {
+  if (!audioCtx) return;
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+
+  const cfg = {
+    pistol:  { freq:380, dur:0.10, q:1.5, type:'square',   vol:0.25 },
+    shotgun: { freq:140, dur:0.22, q:0.8, type:'sawtooth', vol:0.40 },
+    rifle:   { freq:520, dur:0.07, q:2.0, type:'square',   vol:0.20 },
+    sniper:  { freq:220, dur:0.30, q:1.0, type:'sawtooth', vol:0.45 },
+    smg:     { freq:620, dur:0.05, q:2.5, type:'square',   vol:0.15 },
+  }[weapon] || { freq:380, dur:0.10, q:1.5, type:'square', vol:0.25 };
+
+  // Noise burst (the "bang")
+  const bufSize = Math.floor(ctx.sampleRate * cfg.dur);
+  const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i=0; i<bufSize; i++) {
+    const t = i/bufSize;
+    data[i] = (Math.random()*2 - 1) * Math.pow(1-t, 1.8);
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buf;
+  const bandpass = ctx.createBiquadFilter();
+  bandpass.type = 'bandpass';
+  bandpass.frequency.value = cfg.freq;
+  bandpass.Q.value = cfg.q;
+  const nGain = ctx.createGain();
+  nGain.gain.value = cfg.vol * distAttenuation;
+  nGain.gain.exponentialRampToValueAtTime(0.001, now + cfg.dur);
+  noise.connect(bandpass).connect(nGain).connect(masterGain);
+  noise.start(now);
+
+  // Pitched component (the "boom")
+  const osc = ctx.createOscillator();
+  osc.type = cfg.type;
+  osc.frequency.setValueAtTime(cfg.freq*0.9, now);
+  osc.frequency.exponentialRampToValueAtTime(cfg.freq*0.3, now + cfg.dur*0.8);
+  const oGain = ctx.createGain();
+  oGain.gain.value = cfg.vol * 0.6 * distAttenuation;
+  oGain.gain.exponentialRampToValueAtTime(0.001, now + cfg.dur*0.7);
+  osc.connect(oGain).connect(masterGain);
+  osc.start(now);
+  osc.stop(now + cfg.dur);
+}
+
+/* Hit sound — short metallic clink */
+function playHit(distAttenuation=1) {
+  if (!audioCtx) return;
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(1400, now);
+  osc.frequency.exponentialRampToValueAtTime(280, now + 0.09);
+  const g = ctx.createGain();
+  g.gain.value = 0.20 * distAttenuation;
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  osc.connect(g).connect(masterGain);
+  osc.start(now); osc.stop(now + 0.13);
+}
+
+/* Explosion — kill / death */
+function playExplosion(distAttenuation=1) {
+  if (!audioCtx) return;
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+
+  // Low rumble
+  const osc = ctx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(120, now);
+  osc.frequency.exponentialRampToValueAtTime(40, now + 0.6);
+  const oG = ctx.createGain();
+  oG.gain.value = 0.6 * distAttenuation;
+  oG.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+  osc.connect(oG).connect(masterGain);
+  osc.start(now); osc.stop(now + 0.7);
+
+  // Noise crash
+  const bufSize = Math.floor(ctx.sampleRate * 0.5);
+  const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i=0; i<bufSize; i++) {
+    data[i] = (Math.random()*2 - 1) * Math.pow(1 - i/bufSize, 1.5);
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buf;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 600;
+  const nG = ctx.createGain();
+  nG.gain.value = 0.5 * distAttenuation;
+  nG.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+  noise.connect(lp).connect(nG).connect(masterGain);
+  noise.start(now);
+}
+
+/* Simple ambient BGM — droning low pads */
+function startBGM() {
+  if (!audioCtx || !bgmGain) return;
+  const ctx = audioCtx;
+  // Two slowly detuned saw pads — military-ambient feel
+  [55, 73.42, 110].forEach((freq, idx) => {
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = freq;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 380 + idx*60;
+    f.Q.value = 0.7;
+    const g = ctx.createGain();
+    g.gain.value = 0.18 - idx*0.04;
+    // Slow LFO on filter cutoff
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.07 + idx*0.04;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 60;
+    lfo.connect(lfoGain).connect(f.frequency);
+    o.connect(f).connect(g).connect(bgmGain);
+    o.start(); lfo.start();
+    bgmNodes.push(o, lfo);
+  });
+}
+
+/* Distance-attenuation for spatial sounds */
+function distAtten(x, y) {
+  const me = gameState.players.find(p=>p.id===myId);
+  if (!me) return 1;
+  const d = Math.hypot(x-me.x, y-me.y);
+  return Math.max(0.05, 1 - d/900);
+}
 
 /* ─── CHEAT MODE: spinning rampage ─── */
 const CHEAT_DURATION = 4000;   // 4 seconds of madness
@@ -337,6 +524,8 @@ socket.on('gameRejoined', data => {
     document.getElementById('wave-label').textContent = `웨이브 ${waveNum} / ${totalWaves}`;
   } else if (gameMode === 'team') {
     document.getElementById('team-hud').style.display = 'block';
+  } else if (gameMode === 'ffa') {
+    document.getElementById('ffa-hud').style.display = 'block';
   }
 
   showWaveAnnounce(
@@ -364,25 +553,53 @@ socket.on('rejoinFailed', () => {
   setTimeout(() => location.href = 'lobby.html', 2500);
 });
 
+const seenBullets = new Set();
 socket.on('gameState', state => {
+  // Detect new bullets so we can play other players' gun sounds + recoil
+  const currentIds = new Set();
+  state.bullets.forEach(b => {
+    currentIds.add(b.id);
+    if (!seenBullets.has(b.id) && b.shooterId !== myId) {
+      const shooter = state.players.find(p => p.id === b.shooterId);
+      if (shooter) {
+        playShot(b.weapon || 'pistol', distAtten(shooter.x, shooter.y));
+        recoilOffset[shooter.id] = { amount: 6, weapon: b.weapon };
+      }
+    }
+  });
+  seenBullets.clear();
+  currentIds.forEach(id => seenBullets.add(id));
+
   gameState = state;
   const me = state.players.find(p => p.id === myId);
   if (me) {
     updateHpHUD(me.hp);
     if (!me.alive && !isDead) {
       isDead = true;
-      document.getElementById('game-over-overlay').style.display = 'flex';
+      // Only show plain game-over overlay if no respawn is coming (single mode)
+      if (gameMode === 'single') {
+        document.getElementById('game-over-overlay').style.display = 'flex';
+      }
     }
   }
   if (gameMode === 'team') {
-    const alive = state.players.filter(p=>p.alive);
-    document.getElementById('red-count').textContent  = alive.filter(p=>p.team==='red').length;
-    document.getElementById('blue-count').textContent = alive.filter(p=>p.team==='blue').length;
+    document.getElementById('red-count').textContent  =
+      state.players.filter(p=>p.team==='red').reduce((s,p)=>s+(p.kills||0),0);
+    document.getElementById('blue-count').textContent =
+      state.players.filter(p=>p.team==='blue').reduce((s,p)=>s+(p.kills||0),0);
+  } else if (gameMode === 'ffa' && me) {
+    const el = document.getElementById('my-kills');
+    if (el) el.textContent = me.kills || 0;
   }
 });
 
-socket.on('bulletHit', ({ x, y }) => {
+socket.on('bulletHit', ({ x, y, targetId }) => {
   hitEffects.push({ x, y, r:0, life:1 });
+  playHit(distAtten(x, y));
+  // Trigger recoil on hit target too (kick-back when shot)
+  if (targetId && targetId !== myId) {
+    recoilOffset[targetId] = { amount: 4, weapon: 'pistol' };
+  }
 });
 
 socket.on('gotHit', ({ damage, hp }) => {
@@ -390,12 +607,56 @@ socket.on('gotHit', ({ damage, hp }) => {
   const f = document.getElementById('hit-flash');
   f.style.opacity = '1';
   setTimeout(() => f.style.opacity = '0', 180);
+  addShake(3.5);
 });
 
-socket.on('playerKilled', ({ deadId, killerName }) => {
+socket.on('playerKilled', ({ deadId, killerName, x, y }) => {
   const dead = gameState.players.find(p=>p.id===deadId);
   addKillFeed(killerName, dead?.name||'???');
-  if (deadId === myId) isDead = true;
+  // Explosion: visual ring + sound + shake
+  const ex = (x ?? dead?.x ?? 0), ey = (y ?? dead?.y ?? 0);
+  explosions.push({ x:ex, y:ey, r:5, life:1.0 });
+  playExplosion(distAtten(ex, ey));
+  if (deadId === myId) {
+    isDead = true;
+    addShake(20);
+  } else {
+    addShake(6 * distAtten(ex, ey));
+  }
+});
+
+socket.on('respawnPending', ({ delay }) => {
+  // Show countdown overlay
+  const ov = document.getElementById('game-over-overlay');
+  if (!ov) return;
+  ov.style.display = 'flex';
+  let left = Math.ceil(delay/1000);
+  ov.innerHTML = `
+    <div style="font-size:54px">💥</div>
+    <div style="font-size:24px;font-weight:900;color:#EF4444">파괴됨</div>
+    <div style="font-size:16px;color:rgba(255,255,255,0.7)">재출격까지 <span id="resp-cd" style="color:#FBBF24;font-weight:900">${left}</span>초</div>
+  `;
+  clearInterval(window._respInt);
+  window._respInt = setInterval(() => {
+    left--;
+    const el = document.getElementById('resp-cd');
+    if (el) el.textContent = left;
+    if (left <= 0) clearInterval(window._respInt);
+  }, 1000);
+});
+
+socket.on('respawned', ({ hp, x, y }) => {
+  isDead = false;
+  updateHpHUD(hp);
+  document.getElementById('game-over-overlay').style.display = 'none';
+  clearInterval(window._respInt);
+  ammo = WEAPONS_CFG[myWeapon]?.maxAmmo || 12;
+  isReloading = false;
+  updateAmmoHUD();
+  const btn = document.getElementById('reload-btn');
+  btn.classList.remove('reloading'); btn.textContent = '재장전';
+  toast('🚀 재출격!', 1500);
+  addShake(4);
 });
 
 socket.on('waveCleared', ({ wave }) => {
@@ -508,12 +769,24 @@ function render(dt) {
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
 
+  // Decay screen shake
+  shakeAmt = Math.max(0, shakeAmt - dt*60);
+  const sx = (Math.random()-0.5) * shakeAmt;
+  const sy = (Math.random()-0.5) * shakeAmt;
+
+  // Decay recoil
+  for (const id in recoilOffset) {
+    recoilOffset[id].amount -= dt*30;
+    if (recoilOffset[id].amount <= 0) delete recoilOffset[id];
+  }
+
   ctx.save();
-  ctx.translate(-camX, -camY);
+  ctx.translate(-camX + sx, -camY + sy);
     drawMap();
     drawBullets();
     drawPlayers();
     drawHitEffects(dt);
+    drawExplosions(dt);
   ctx.restore();
 
   drawMinimap();
@@ -701,18 +974,31 @@ function drawTank(p) {
 
   // === Barrel (forward = -Y direction) ===
   const bw = s.barW;
+  const recoil = recoilOffset[p.id]?.amount || 0;  // push barrel BACK (+Y)
   // Barrel mount
   ctx.fillStyle = cols.turret;
   ctx.fillRect(-bw - 1, -s.tw/2 - 3, bw*2 + 2, 5);
   // Barrel
   ctx.fillStyle = '#2a2a2a';
-  ctx.fillRect(-bw/2, -s.tw/2 - s.barL, bw, s.barL);
+  ctx.fillRect(-bw/2, -s.tw/2 - s.barL + recoil, bw, s.barL);
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(-bw/2, -s.tw/2 - s.barL, bw, s.barL);
+  ctx.strokeRect(-bw/2, -s.tw/2 - s.barL + recoil, bw, s.barL);
   // Muzzle brake
   ctx.fillStyle = '#444';
-  ctx.fillRect(-bw, -s.tw/2 - s.barL - 4, bw*2, 4);
+  ctx.fillRect(-bw, -s.tw/2 - s.barL - 4 + recoil, bw*2, 4);
+
+  // Muzzle flash on recoil
+  if (recoil > 2) {
+    ctx.beginPath();
+    ctx.arc(0, -s.tw/2 - s.barL - 4 + recoil, recoil*0.9, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(255,220,120,${recoil/8})`;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -s.tw/2 - s.barL - 4 + recoil, recoil*0.5, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(255,255,200,${recoil/6})`;
+    ctx.fill();
+  }
 
   ctx.restore();
 
@@ -745,6 +1031,40 @@ function drawBullets() {
     ctx.beginPath(); ctx.arc(b.x, b.y, BULLET_R*0.45, 0, Math.PI*2);
     ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.fill();
   });
+}
+
+/* ─── Explosions ─── */
+function drawExplosions(dt) {
+  for (let i = explosions.length-1; i >= 0; i--) {
+    const e = explosions[i];
+    e.r += 220*dt;
+    e.life -= dt*1.3;
+    if (e.life <= 0) { explosions.splice(i, 1); continue; }
+
+    // Outer shockwave
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.r, 0, Math.PI*2);
+    ctx.strokeStyle = `rgba(255,160,40,${e.life*0.9})`;
+    ctx.lineWidth = 4 * e.life;
+    ctx.stroke();
+
+    // Inner core
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.r*0.45, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(255,220,120,${e.life*0.6})`;
+    ctx.fill();
+
+    // Sparks
+    for (let s=0; s<6; s++) {
+      const a  = s/6 * Math.PI*2 + e.life*4;
+      const dx = Math.cos(a)*e.r*0.9;
+      const dy = Math.sin(a)*e.r*0.9;
+      ctx.beginPath();
+      ctx.arc(e.x+dx, e.y+dy, 3*e.life, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(255,200,80,${e.life})`;
+      ctx.fill();
+    }
+  }
 }
 
 /* ─── Hit effects ─── */

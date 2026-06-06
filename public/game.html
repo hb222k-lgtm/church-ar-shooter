@@ -162,10 +162,17 @@
 <!-- Wave HUD -->
 <div id="wave-hud"><span id="wave-label">웨이브 1 / 5</span></div>
 
+<!-- FFA HUD -->
+<div id="ffa-hud" style="display:none;position:fixed;top:14px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,0.65);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.18);
+  border-radius:20px;padding:6px 20px;font-size:14px;font-weight:700;color:#fff;z-index:8;pointer-events:none">
+  🏆 내 킬: <span id="my-kills" style="color:#FBBF24">0</span> / 10
+</div>
+
 <!-- Team HUD -->
 <div id="team-hud">
   <span style="color:#EF4444">🔴 <span id="red-count">0</span></span>
-  <span style="color:rgba(255,255,255,0.35);margin:0 8px">vs</span>
+  <span style="color:rgba(255,255,255,0.35);margin:0 8px">/ 20</span>
   <span style="color:#3B82F6">🔵 <span id="blue-count">0</span></span>
 </div>
 

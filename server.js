@@ -15,12 +15,26 @@ const rooms = {};
 /* ─── 2D World Constants ─── */
 const GAME_W       = 1800;
 const GAME_H       = 1200;
-const PLAYER_SPEED  = 110;   // px/s — tanks are slower
-const PLAYER_R      = 22;    // tanks are slightly larger
-const BULLET_SPEED  = 720;
+const PLAYER_SPEED  = 130;   // base px/s — modified by chassis
+const PLAYER_R      = 22;
+const BULLET_SPEED  = 760;
 const BULLET_R      = 6;
 const TICK_MS       = 33;    // ~30 Hz
-const PLAYER_MAX_HP = 1500;  // 10× tougher tank armor
+const PLAYER_MAX_HP = 700;   // base — modified by chassis
+const RESPAWN_MS    = 5000;  // respawn delay in FFA / team modes
+
+/* Chassis stat profiles — chosen so each tank has a real role */
+const CHASSIS_STATS = {
+  light:   { hp:500,  speedMul:1.30, dmgMul:0.85, fireMul:0.85 },
+  medium:  { hp:700,  speedMul:1.00, dmgMul:1.00, fireMul:1.00 },
+  heavy:   { hp:1000, speedMul:0.72, dmgMul:1.15, fireMul:1.15 },
+  sniper:  { hp:600,  speedMul:0.95, dmgMul:1.35, fireMul:1.20 },
+  scout:   { hp:550,  speedMul:1.25, dmgMul:0.90, fireMul:0.90 },
+};
+function getChassisStats(p) {
+  const key = p?.character?.chassis || p?.character?.hairStyle || 'medium';
+  return CHASSIS_STATS[key] || CHASSIS_STATS.medium;
+}
 
 /* ─── Map ─── */
 const MAP_WALLS = [
@@ -138,11 +152,28 @@ function assignPositions(room) {
     p.x     = sp.x + (Math.random()*30 - 15);
     p.y     = sp.y + (Math.random()*30 - 15);
     p.vx    = 0; p.vy = 0; p.angle = 0;
-    p.hp    = p.isBot ? (p.maxHp||100) : PLAYER_MAX_HP;
-    p.maxHp = p.isBot ? (p.maxHp||100) : PLAYER_MAX_HP;
+    if (p.isBot) {
+      p.hp    = p.maxHp || 100;
+    } else {
+      const cs = getChassisStats(p);
+      p.maxHp = cs.hp;
+      p.hp    = cs.hp;
+    }
     p.alive = true;
     if (!p.isBot) p.kills = 0;
   });
+}
+
+function respawnPlayer(room, p) {
+  const cs = getChassisStats(p);
+  const sp = SPAWN_POSITIONS[Math.floor(Math.random()*SPAWN_POSITIONS.length)];
+  p.x = sp.x + (Math.random()*30 - 15);
+  p.y = sp.y + (Math.random()*30 - 15);
+  p.vx = 0; p.vy = 0;
+  p.maxHp = cs.hp;
+  p.hp    = cs.hp;
+  p.alive = true;
+  p.respawnAt = 0;
 }
 
 /* ─── Bot creation ─── */
@@ -164,6 +195,7 @@ function createBot(roomCode, difficulty, wave) {
     botSpeed:diff.speed, botAccuracy:diff.accuracy,
     botShootInterval:diff.shootInterval, botDmgMul:diff.dmgMul||0.5,
     nextShoot: Date.now() + Math.random()*diff.shootInterval*2,
+    wigPhase: Math.random()*6, strafeUntil:0, strafeDir:1,
   };
   return botId;
 }
@@ -187,12 +219,25 @@ function startGameLoop(roomCode) {
     const players = Object.values(room.players);
     const humans  = players.filter(p => !p.isBot && p.alive);
 
+    /* ── Respawn pending dead players (FFA/team only) ── */
+    if (room.gameMode === 'ffa' || room.gameMode === 'team') {
+      players.forEach(p => {
+        if (!p.alive && p.respawnAt && now >= p.respawnAt) {
+          respawnPlayer(room, p);
+          if (!p.isBot) {
+            io.to(p.id).emit('respawned', { hp:p.hp, x:p.x, y:p.y });
+          }
+        }
+      });
+    }
+
     /* ── Human movement ── */
     players.forEach(p => {
       if (p.isBot || !p.alive) return;
       if (p.vx || p.vy) {
-        const nx = p.x + p.vx * PLAYER_SPEED * dt;
-        const ny = p.y + p.vy * PLAYER_SPEED * dt;
+        const spd = PLAYER_SPEED * getChassisStats(p).speedMul;
+        const nx = p.x + p.vx * spd * dt;
+        const ny = p.y + p.vy * spd * dt;
         if (!collidesWithWalls(nx, p.y, PLAYER_R)) p.x = nx;
         if (!collidesWithWalls(p.x, ny, PLAYER_R)) p.y = ny;
         p.x = Math.max(PLAYER_R+22, Math.min(GAME_W-PLAYER_R-22, p.x));
@@ -218,16 +263,38 @@ function startGameLoop(roomCode) {
       bot.angle  = Math.atan2(dy, dx);
 
       const spd = PLAYER_SPEED * (bot.botSpeed||0.55);
-      if (dist > 220) {
-        // Advance
-        const nx = bot.x + (dx/dist)*spd*dt;
-        const ny = bot.y + (dy/dist)*spd*dt;
+
+      // Strafe if recently hit (perpendicular to threat direction)
+      if (bot.strafeUntil && now < bot.strafeUntil) {
+        const pdx = -Math.sin(bot.angle) * bot.strafeDir;
+        const pdy =  Math.cos(bot.angle) * bot.strafeDir;
+        const nx  = bot.x + pdx*spd*0.9*dt;
+        const ny  = bot.y + pdy*spd*0.9*dt;
         if (!collidesWithWalls(nx, bot.y, PLAYER_R)) bot.x = nx;
         if (!collidesWithWalls(bot.x, ny, PLAYER_R)) bot.y = ny;
-      } else if (dist < 110) {
-        // Retreat
-        const nx = bot.x - (dx/dist)*spd*0.5*dt;
-        const ny = bot.y - (dy/dist)*spd*0.5*dt;
+      } else if (dist > 260) {
+        // Advance, with slight perpendicular wiggle to look less robotic
+        const wig = Math.sin(now/400 + (bot.wigPhase||0)) * 0.4;
+        const fx  = dx/dist + (-Math.sin(bot.angle))*wig;
+        const fy  = dy/dist + ( Math.cos(bot.angle))*wig;
+        const fl  = Math.hypot(fx, fy);
+        const nx  = bot.x + (fx/fl)*spd*dt;
+        const ny  = bot.y + (fy/fl)*spd*dt;
+        if (!collidesWithWalls(nx, bot.y, PLAYER_R)) bot.x = nx;
+        if (!collidesWithWalls(bot.x, ny, PLAYER_R)) bot.y = ny;
+      } else if (dist < 130) {
+        // Too close — back up
+        const nx = bot.x - (dx/dist)*spd*0.6*dt;
+        const ny = bot.y - (dy/dist)*spd*0.6*dt;
+        if (!collidesWithWalls(nx, bot.y, PLAYER_R)) bot.x = nx;
+        if (!collidesWithWalls(bot.x, ny, PLAYER_R)) bot.y = ny;
+      } else {
+        // Mid-range — strafe sideways while shooting
+        const dir = ((bot.wigPhase||0) % 2 < 1) ? 1 : -1;
+        const pdx = -Math.sin(bot.angle) * dir;
+        const pdy =  Math.cos(bot.angle) * dir;
+        const nx  = bot.x + pdx*spd*0.7*dt;
+        const ny  = bot.y + pdy*spd*0.7*dt;
         if (!collidesWithWalls(nx, bot.y, PLAYER_R)) bot.x = nx;
         if (!collidesWithWalls(bot.x, ny, PLAYER_R)) bot.y = ny;
       }
@@ -266,6 +333,11 @@ function startGameLoop(roomCode) {
         if (room.gameMode==='team' && room.players[b.shooterId]?.team === p.team && p.team) continue;
         if (Math.hypot(p.x-b.x, p.y-b.y) < PLAYER_R+BULLET_R) {
           p.hp = Math.max(0, p.hp - b.damage);
+          // Bots strafe when hit
+          if (p.isBot && p.alive) {
+            p.strafeUntil = now + 700 + Math.random()*600;
+            p.strafeDir = Math.random()<0.5 ? 1 : -1;
+          }
           if (!p.isBot) io.to(p.id).emit('gotHit', { damage:b.damage, hp:p.hp, shooterId:b.shooterId });
           io.to(roomCode).emit('bulletHit', { bulletId:b.id, targetId:p.id, damage:b.damage, x:b.x, y:b.y });
           if (p.hp <= 0) {
@@ -275,7 +347,13 @@ function startGameLoop(roomCode) {
             io.to(roomCode).emit('playerKilled', {
               deadId:p.id, killerId:b.shooterId,
               killerName:shooter?.name||'?', kills:shooter?.kills||0,
+              x:p.x, y:p.y,
             });
+            // Schedule respawn for FFA/team modes
+            if (room.gameMode === 'ffa' || room.gameMode === 'team') {
+              p.respawnAt = now + RESPAWN_MS;
+              if (!p.isBot) io.to(p.id).emit('respawnPending', { delay:RESPAWN_MS });
+            }
             checkWin(room, roomCode);
           }
           return false;
@@ -341,25 +419,30 @@ function checkWin(room, roomCode) {
       }
     }
   } else if (room.gameMode === 'ffa') {
-    const alive = Object.values(room.players).filter(p=>p.alive);
-    if (alive.length <= 1) {
+    // First to 10 kills wins (or when only one human remains connected)
+    const KILL_GOAL = 10;
+    const top = Object.values(room.players).sort((a,b)=>b.kills-a.kills)[0];
+    const humans = Object.values(room.players).filter(p=>!p.isBot);
+    if (top && top.kills >= KILL_GOAL || humans.length === 0) {
       room.status = 'ended';
       if (room.gameLoop) clearInterval(room.gameLoop);
       io.to(roomCode).emit('gameEnded', {
-        mode:'ffa', winnerId:alive[0]?.id||null,
+        mode:'ffa', winnerId:top?.id||null,
         stats:Object.values(room.players).map(p=>({id:p.id,name:p.name,kills:p.kills,alive:p.alive})),
       });
     }
   } else if (room.gameMode === 'team') {
-    const alive = Object.values(room.players).filter(p=>p.alive);
-    const red   = alive.filter(p=>p.team==='red').length;
-    const blue  = alive.filter(p=>p.team==='blue').length;
-    if (red===0 || blue===0) {
+    // First team to 20 kills wins
+    const TEAM_GOAL = 20;
+    const players = Object.values(room.players);
+    const redK    = players.filter(p=>p.team==='red').reduce((s,p)=>s+p.kills, 0);
+    const blueK   = players.filter(p=>p.team==='blue').reduce((s,p)=>s+p.kills, 0);
+    if (redK >= TEAM_GOAL || blueK >= TEAM_GOAL) {
       room.status = 'ended';
       if (room.gameLoop) clearInterval(room.gameLoop);
       io.to(roomCode).emit('gameEnded', {
-        mode:'team', winnerTeam:red>0?'red':'blue',
-        stats:Object.values(room.players).map(p=>({id:p.id,name:p.name,team:p.team,kills:p.kills,alive:p.alive})),
+        mode:'team', winnerTeam:redK>blueK?'red':'blue',
+        stats:players.map(p=>({id:p.id,name:p.name,team:p.team,kills:p.kills,alive:p.alive})),
       });
     }
   }
@@ -514,13 +597,14 @@ io.on('connection', (socket) => {
     if (!shooter?.alive) return;
 
     const w    = WEAPONS[weapon] || WEAPONS.pistol;
+    const cs   = getChassisStats(shooter);
     const sa   = angle ?? shooter.angle;
     const ox   = shooter.x + Math.cos(sa)*(PLAYER_R+6);
     const oy   = shooter.y + Math.sin(sa)*(PLAYER_R+6);
+    const dmgMul = cs.dmgMul;
 
-    // Cheat shots: only 1 pellet, very low damage, no spread, shorter range
     if (cheat) {
-      const dmg = Math.max(1, Math.round(w.damage * 0.12)); // ~12% of base damage
+      const dmg = Math.max(1, Math.round(w.damage * 0.12 * dmgMul));
       room.bullets.push({
         id:'b_'+Math.random().toString(36).substr(2,6),
         shooterId:socket.id,
@@ -535,9 +619,10 @@ io.on('connection', (socket) => {
     const pellets = weapon==='shotgun' ? (w.pellets||7) : 1;
     for (let i=0; i<pellets; i++) {
       const pa  = sa + (Math.random()-0.5)*w.spread*(pellets>1?2:1);
-      const dmg = pellets>1
+      const baseDmg = pellets>1
         ? Math.max(1, w.damage + Math.floor(Math.random()*4)-2)
         : Math.max(1, w.damage + Math.floor(Math.random()*11)-5);
+      const dmg = Math.max(1, Math.round(baseDmg * dmgMul));
       room.bullets.push({
         id:'b_'+Math.random().toString(36).substr(2,6),
         shooterId:socket.id,
