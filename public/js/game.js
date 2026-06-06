@@ -7,9 +7,18 @@
 const socket = io();
 
 /* ─── Map constants (mirrors server) ─── */
-const PLAYER_R = 18;
+const PLAYER_R = 22;
 const BULLET_R = 6;
-const PLAYER_MAX_HP = 150;
+const PLAYER_MAX_HP = 1500;
+
+/* ─── Tank chassis catalog ─── */
+const TANK_CHASSIS = {
+  light:   { w:32, h:40, tw:18, th:20, barL:22, barW:3.5, name:'경전차', desc:'빠르고 가벼움' },
+  medium:  { w:38, h:46, tw:22, th:24, barL:26, barW:4,   name:'중형전차', desc:'균형 잡힘' },
+  heavy:   { w:46, h:54, tw:28, th:30, barL:28, barW:5,   name:'중전차', desc:'두꺼운 장갑' },
+  sniper:  { w:32, h:44, tw:18, th:20, barL:40, barW:3,   name:'저격전차', desc:'긴 포신' },
+  scout:   { w:28, h:36, tw:16, th:18, barL:20, barW:3,   name:'정찰전차', desc:'민첩한 정찰' },
+};
 let   mapW = 1800, mapH = 1200;
 let   walls = [];
 
@@ -555,104 +564,174 @@ function drawMap() {
   });
 }
 
-/* ─── Draw Players ─── */
+/* ─── Draw Players (as tanks) ─── */
 function drawPlayers() {
   const sorted = [...gameState.players].sort((a,b)=>(a.alive?1:0)-(b.alive?1:0));
-  sorted.forEach(p => {
-    if (!p.alive) {
-      ctx.globalAlpha = 0.22;
-      ctx.beginPath(); ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI*2);
-      ctx.fillStyle = '#555'; ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText('💀', p.x, p.y+5);
-      return;
+  sorted.forEach(p => drawTank(p));
+}
+
+function getTankColors(p) {
+  const char = p.character || {};
+  const isMe    = p.id === myId;
+  const isAlly  = gameMode==='team' && p.team===myTeam && !isMe;
+  const isEnemy = !isMe && !isAlly;
+
+  // Team-mode overrides — body color follows team color so you can tell sides
+  let body = char.bodyColor || char.skinColor || '#4B6B3A';
+  if (p.team === 'red')  body = char.bodyColor || '#8B2D2D';
+  if (p.team === 'blue') body = char.bodyColor || '#1E3A8A';
+
+  return {
+    body,
+    turret: char.turretColor || char.hairColor  || '#2A3F1F',
+    track:  char.trackColor  || char.pantsColor || '#1C1C1C',
+    accent: char.accentColor || char.shirtColor || '#FBBF24',
+    isMe, isAlly, isEnemy,
+  };
+}
+
+function drawTank(p) {
+  const char     = p.character || {};
+  const chassisK = char.chassis || char.hairStyle || 'medium';
+  const s        = TANK_CHASSIS[chassisK] || TANK_CHASSIS.medium;
+  const cols     = getTankColors(p);
+  const useAngle = (cols.isMe && cheatActive) ? cheatAngle : p.angle;
+
+  // Dead tank — show wreck
+  if (!p.alive) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.angle + Math.PI/2);
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#3a3a3a';
+    ctx.fillRect(-s.w/2-4, -s.h/2, s.w+8, s.h);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath(); ctx.arc(0, 0, s.tw/2, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    ctx.font = '20px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('💥', p.x, p.y+6);
+    return;
+  }
+
+  // Ground shadow
+  ctx.beginPath();
+  ctx.ellipse(p.x, p.y + s.h*0.55, s.w*0.62, 5, 0, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.42)';
+  ctx.fill();
+
+  // Cheat aura around self
+  if (cols.isMe && cheatActive) {
+    const t = (Date.now() % 1000) / 1000;
+    for (let k=0; k<6; k++) {
+      const a = useAngle + k*Math.PI/3 + t*Math.PI*2;
+      const rr = s.w*0.7 + 12 + Math.sin(t*Math.PI*2 + k)*3;
+      ctx.beginPath();
+      ctx.arc(p.x+Math.cos(a)*rr, p.y+Math.sin(a)*rr, 4, 0, Math.PI*2);
+      ctx.fillStyle = `hsl(${(k*60 + t*360)%360}, 90%, 60%)`;
+      ctx.shadowBlur = 14; ctx.shadowColor = ctx.fillStyle;
+      ctx.fill();
     }
+    ctx.shadowBlur = 0;
+  }
 
-    const isMe    = p.id === myId;
-    const isAlly  = gameMode==='team' && p.team===myTeam && !isMe;
-    const isEnemy = !isMe && !isAlly;
+  // === Tank body (rotates with aim angle) ===
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  // Tank body is drawn pointing "up" (-Y) before rotation; +PI/2 makes it face aimAngle
+  ctx.rotate(useAngle + Math.PI/2);
 
-    let bodyColor;
-    if      (isMe)              bodyColor = '#10B981';
-    else if (p.team==='red')    bodyColor = '#EF4444';
-    else if (p.team==='blue')   bodyColor = '#3B82F6';
-    else                        bodyColor = '#F59E0B';
-
-    // Ground shadow
-    ctx.beginPath();
-    ctx.ellipse(p.x, p.y+PLAYER_R+2, PLAYER_R*0.65, 4, 0, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fill();
-
-    // Glow
-    ctx.shadowBlur  = isMe ? 22 : 10;
-    ctx.shadowColor = bodyColor;
-
-    // Body
-    ctx.beginPath(); ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI*2);
-    ctx.fillStyle = bodyColor; ctx.fill();
-
-    // Radial highlight
-    const hl = ctx.createRadialGradient(p.x-5, p.y-5, 2, p.x, p.y, PLAYER_R);
-    hl.addColorStop(0, 'rgba(255,255,255,0.22)');
-    hl.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = hl; ctx.fill();
-
-    // Outline
-    ctx.strokeStyle = isMe ? '#fff' : 'rgba(255,255,255,0.5)';
-    ctx.lineWidth   = isMe ? 2.5 : 1.5;
-    ctx.stroke();
-    ctx.shadowBlur  = 0;
-
-    // Inner ring for self
-    if (isMe) {
-      ctx.beginPath(); ctx.arc(p.x, p.y, PLAYER_R-5, 0, Math.PI*2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.17)'; ctx.lineWidth=1; ctx.stroke();
-    }
-
-    // Gun barrel (spin when cheating, for self)
-    const useAngle = (isMe && cheatActive) ? cheatAngle : p.angle;
-    const cos = Math.cos(useAngle), sin = Math.sin(useAngle);
-    const gs  = PLAYER_R*0.45, ge = PLAYER_R+15;
-
-    // Cheat aura: rainbow swirl ring around self
-    if (isMe && cheatActive) {
-      const t = (Date.now() % 1000) / 1000;
-      for (let k=0; k<6; k++) {
-        const a = useAngle + k*Math.PI/3 + t*Math.PI*2;
-        const rr = PLAYER_R + 8 + Math.sin(t*Math.PI*2 + k)*3;
-        ctx.beginPath();
-        ctx.arc(p.x+Math.cos(a)*rr, p.y+Math.sin(a)*rr, 4, 0, Math.PI*2);
-        ctx.fillStyle = `hsl(${(k*60 + t*360)%360}, 90%, 60%)`;
-        ctx.shadowBlur = 14;
-        ctx.shadowColor = ctx.fillStyle;
-        ctx.fill();
-      }
-      ctx.shadowBlur = 0;
-    }
-    ctx.beginPath();
-    ctx.moveTo(p.x+cos*gs, p.y+sin*gs);
-    ctx.lineTo(p.x+cos*ge, p.y+sin*ge);
-    ctx.strokeStyle = '#D1D5DB'; ctx.lineWidth=3; ctx.lineCap='round'; ctx.stroke();
-    ctx.beginPath(); ctx.arc(p.x+cos*ge, p.y+sin*ge, 2.5, 0, Math.PI*2);
-    ctx.fillStyle = '#fff'; ctx.fill();
-
-    // Name tag
-    const nameColor = isMe ? '#6EE7B7' : isEnemy ? '#FCA5A5' : '#93C5FD';
-    ctx.fillStyle = nameColor;
-    ctx.font      = `${isMe?'bold ':''}11px "Courier New",monospace`;
-    ctx.textAlign = 'center';
-    ctx.fillText((p.name||'?').split(' ').slice(0,2).join(' '), p.x, p.y-PLAYER_R-6);
-
-    // HP bar
-    const bw=40, bh=5, bx=p.x-bw/2, by=p.y+PLAYER_R+5;
-    const maxHp = p.maxHp || (p.isBot ? 100 : PLAYER_MAX_HP);
-    const hpPct = Math.max(0, Math.min(1, p.hp/maxHp));
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(bx-1, by-1, bw+2, bh+2);
-    ctx.fillStyle = hpPct>0.5?'#10B981' : hpPct>0.25?'#F59E0B' : '#EF4444';
-    ctx.fillRect(bx, by, bw*hpPct, bh);
+  // Tracks (left + right of body)
+  ctx.fillStyle = cols.track;
+  ctx.fillRect(-s.w/2 - 5, -s.h/2, 5, s.h);
+  ctx.fillRect( s.w/2,     -s.h/2, 5, s.h);
+  // Track tread lines
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  for (let i = -s.h/2 + 4; i < s.h/2 - 1; i += 5) {
+    ctx.fillRect(-s.w/2 - 5, i, 5, 1.5);
+    ctx.fillRect( s.w/2,     i, 5, 1.5);
+  }
+  // Drive wheels (front + rear of each track)
+  ctx.fillStyle = '#0a0a0a';
+  [-s.h/2+2, s.h/2-4].forEach(yy => {
+    ctx.beginPath(); ctx.arc(-s.w/2 - 2.5, yy+1, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc( s.w/2 + 2.5, yy+1, 3, 0, Math.PI*2); ctx.fill();
   });
+
+  // Body chassis
+  ctx.fillStyle = cols.body;
+  ctx.fillRect(-s.w/2, -s.h/2, s.w, s.h);
+
+  // Body highlight gradient
+  const bg = ctx.createLinearGradient(0, -s.h/2, 0, s.h/2);
+  bg.addColorStop(0, 'rgba(255,255,255,0.22)');
+  bg.addColorStop(0.4, 'rgba(255,255,255,0)');
+  bg.addColorStop(1, 'rgba(0,0,0,0.25)');
+  ctx.fillStyle = bg;
+  ctx.fillRect(-s.w/2, -s.h/2, s.w, s.h);
+
+  // Accent stripe down center
+  ctx.fillStyle = cols.accent;
+  ctx.fillRect(-2, -s.h/2 + 4, 4, s.h - 8);
+
+  // Body outline
+  ctx.strokeStyle = cols.isMe ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.5)';
+  ctx.lineWidth   = cols.isMe ? 2 : 1.4;
+  ctx.strokeRect(-s.w/2, -s.h/2, s.w, s.h);
+
+  // Front armor plate hint (slight darker rectangle at front = -Y)
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(-s.w/2 + 3, -s.h/2 + 2, s.w - 6, 4);
+
+  // === Turret ===
+  ctx.fillStyle = cols.turret;
+  ctx.beginPath();
+  ctx.arc(0, 0, s.tw/2, 0, Math.PI*2);
+  ctx.fill();
+  // Turret highlight
+  const tg = ctx.createRadialGradient(-s.tw*0.2, -s.tw*0.2, 1, 0, 0, s.tw/2);
+  tg.addColorStop(0, 'rgba(255,255,255,0.25)');
+  tg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = tg; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = 1.4; ctx.stroke();
+
+  // Hatch dot on turret
+  ctx.beginPath(); ctx.arc(0, s.tw*0.15, s.tw*0.13, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fill();
+
+  // === Barrel (forward = -Y direction) ===
+  const bw = s.barW;
+  // Barrel mount
+  ctx.fillStyle = cols.turret;
+  ctx.fillRect(-bw - 1, -s.tw/2 - 3, bw*2 + 2, 5);
+  // Barrel
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(-bw/2, -s.tw/2 - s.barL, bw, s.barL);
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-bw/2, -s.tw/2 - s.barL, bw, s.barL);
+  // Muzzle brake
+  ctx.fillStyle = '#444';
+  ctx.fillRect(-bw, -s.tw/2 - s.barL - 4, bw*2, 4);
+
+  ctx.restore();
+
+  // === Name + HP (screen-aligned) ===
+  const nameColor = cols.isMe ? '#6EE7B7' : cols.isEnemy ? '#FCA5A5' : '#93C5FD';
+  ctx.fillStyle = nameColor;
+  ctx.font = `${cols.isMe?'bold ':''}11px "Courier New",monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillText((p.name||'?').split(' ').slice(0,2).join(' '), p.x, p.y - s.h/2 - 8);
+
+  // HP bar
+  const bw2 = Math.max(44, s.w + 8), bh = 5;
+  const bx = p.x - bw2/2, by = p.y + s.h/2 + 8;
+  const maxHp = p.maxHp || (p.isBot ? 900 : PLAYER_MAX_HP);
+  const hpPct = Math.max(0, Math.min(1, p.hp/maxHp));
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(bx-1, by-1, bw2+2, bh+2);
+  ctx.fillStyle = hpPct>0.5?'#10B981' : hpPct>0.25?'#F59E0B' : '#EF4444';
+  ctx.fillRect(bx, by, bw2*hpPct, bh);
 }
 
 /* ─── Draw Bullets ─── */

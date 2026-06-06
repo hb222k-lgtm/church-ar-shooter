@@ -3,82 +3,102 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Church AR Shooter</title>
+<title>Church Tank Battle</title>
 <link rel="stylesheet" href="css/style.css">
 <style>
-#char-preview-wrap {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 16px 0 8px;
-  background: radial-gradient(ellipse at 50% 80%, rgba(124,58,237,0.25) 0%, transparent 70%);
-}
-#char-canvas-3d {
-  border-radius: 20px;
-  filter: drop-shadow(0 8px 32px rgba(124,58,237,0.4));
-}
-.preview-hint {
-  position: absolute;
-  bottom: 14px;
-  font-size: 11px;
-  color: rgba(255,255,255,0.35);
-  letter-spacing: 0.5px;
-}
+  #tank-preview-wrap {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 18px 0 10px;
+    background: radial-gradient(ellipse at 50% 80%, rgba(124,58,237,0.25) 0%, transparent 70%);
+  }
+  #tank-preview {
+    border-radius: 20px;
+    background: linear-gradient(135deg, #1a2333, #0f172a);
+    box-shadow: 0 8px 32px rgba(124,58,237,0.4), inset 0 0 0 1px rgba(255,255,255,0.05);
+  }
+  .preview-hint {
+    position: absolute;
+    bottom: 16px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 0.5px;
+    text-align: center;
+    width: 100%;
+  }
+  .chassis-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .chassis-card {
+    background: rgba(255,255,255,0.04);
+    border: 1.5px solid rgba(255,255,255,0.12);
+    border-radius: 14px;
+    padding: 12px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .chassis-card:active { transform: scale(0.97); }
+  .chassis-card.selected {
+    background: rgba(124,58,237,0.22);
+    border-color: #A78BFA;
+    box-shadow: 0 0 16px rgba(124,58,237,0.4);
+  }
+  .chassis-icon { font-size: 28px; margin-bottom: 4px; }
+  .chassis-name { font-size: 13px; font-weight: 700; color: #fff; }
+  .chassis-desc { font-size: 10px; color: rgba(255,255,255,0.5); margin-top:2px; }
 </style>
 </head>
 <body>
 <div class="page" id="creator-page">
   <div class="page-header">
-    <h1>⚔️ <span class="gradient-text">Church AR Shooter</span></h1>
-    <p>나만의 캐릭터를 만들어 보세요</p>
+    <h1>🛡️ <span class="gradient-text">탱크 배틀</span></h1>
+    <p>나만의 탱크를 만들어 보세요</p>
   </div>
 
   <div class="scroll-body">
     <!-- Name -->
     <div class="section" style="padding-top:16px">
-      <label>닉네임</label>
-      <input type="text" id="name-input" placeholder="이름을 입력하세요" maxlength="10">
+      <label>탱크 이름</label>
+      <input type="text" id="name-input" placeholder="탱크 이름을 입력하세요" maxlength="12">
     </div>
 
-    <!-- 3D Character Preview -->
-    <div id="char-preview-wrap">
-      <canvas id="char-canvas-3d" width="220" height="300"></canvas>
-      <div class="preview-hint">드래그하여 회전</div>
+    <!-- 2D Tank Preview -->
+    <div id="tank-preview-wrap">
+      <canvas id="tank-preview" width="240" height="240"></canvas>
+      <div class="preview-hint">탱크 미리보기</div>
     </div>
 
     <!-- Tabs -->
     <div class="tabs">
-      <button class="tab-btn active" data-tab="skin">피부/머리</button>
-      <button class="tab-btn" data-tab="outfit">의상</button>
-      <button class="tab-btn" data-tab="accessory">악세서리</button>
+      <button class="tab-btn active" data-tab="chassis">차종</button>
+      <button class="tab-btn" data-tab="color">색상</button>
       <button class="tab-btn" data-tab="weapon">무기</button>
     </div>
 
-    <div class="tab-panel active" id="tab-skin">
-      <div class="section-title">피부색</div>
-      <div class="color-grid" id="skin-colors"></div>
-      <div class="section-title" style="margin-top:16px">머리 스타일</div>
-      <div class="style-grid" id="hair-styles"></div>
-      <div class="section-title" style="margin-top:16px">머리색</div>
-      <div class="color-grid" id="hair-colors"></div>
+    <div class="tab-panel active" id="tab-chassis">
+      <div class="section-title">전차 차종</div>
+      <div class="chassis-grid" id="chassis-grid"></div>
     </div>
 
-    <div class="tab-panel" id="tab-outfit">
-      <div class="section-title">상의 색</div>
-      <div class="color-grid" id="shirt-colors"></div>
-      <div class="section-title" style="margin-top:16px">하의 색</div>
-      <div class="color-grid" id="pants-colors"></div>
-    </div>
-
-    <div class="tab-panel" id="tab-accessory">
-      <div class="section-title">악세서리</div>
-      <div class="style-grid" id="accessories"></div>
-      <div class="section-title" style="margin-top:16px">악세서리 색</div>
-      <div class="color-grid" id="acc-colors"></div>
+    <div class="tab-panel" id="tab-color">
+      <div class="section-title">차체 색</div>
+      <div class="color-grid" id="body-colors"></div>
+      <div class="section-title" style="margin-top:16px">포탑 색</div>
+      <div class="color-grid" id="turret-colors"></div>
+      <div class="section-title" style="margin-top:16px">트랙(궤도) 색</div>
+      <div class="color-grid" id="track-colors"></div>
+      <div class="section-title" style="margin-top:16px">엠블럼/포인트 색</div>
+      <div class="color-grid" id="accent-colors"></div>
     </div>
 
     <div class="tab-panel" id="tab-weapon">
+      <div class="section-title">주포</div>
       <div class="weapon-list" id="weapon-list"></div>
     </div>
   </div>
@@ -89,7 +109,6 @@
 </div>
 
 <div id="toast-container"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="js/creator.js"></script>
 </body>
 </html>

@@ -15,12 +15,12 @@ const rooms = {};
 /* ─── 2D World Constants ─── */
 const GAME_W       = 1800;
 const GAME_H       = 1200;
-const PLAYER_SPEED = 240;   // px/s  (faster movement)
-const PLAYER_R     = 18;
-const BULLET_SPEED = 720;   // px/s
-const BULLET_R     = 6;     // slightly bigger hit-box
-const TICK_MS      = 33;    // ~30 Hz
-const PLAYER_MAX_HP = 150;  // more survivability
+const PLAYER_SPEED  = 110;   // px/s — tanks are slower
+const PLAYER_R      = 22;    // tanks are slightly larger
+const BULLET_SPEED  = 720;
+const BULLET_R      = 6;
+const TICK_MS       = 33;    // ~30 Hz
+const PLAYER_MAX_HP = 1500;  // 10× tougher tank armor
 
 /* ─── Map ─── */
 const MAP_WALLS = [
@@ -95,9 +95,9 @@ const WEAPONS = {
 
 /* ─── Bots ─── */
 const BOT_DIFF = {
-  easy:   { shootInterval:4500, accuracy:0.25, hp:60,  speed:0.40, dmgMul:0.35, name:'초보봇' },
-  normal: { shootInterval:3000, accuracy:0.40, hp:90,  speed:0.55, dmgMul:0.50, name:'일반봇' },
-  hard:   { shootInterval:1800, accuracy:0.60, hp:120, speed:0.70, dmgMul:0.70, name:'강력봇' },
+  easy:   { shootInterval:4500, accuracy:0.25, hp:600,  speed:0.40, dmgMul:0.35, name:'초보봇' },
+  normal: { shootInterval:3000, accuracy:0.40, hp:900,  speed:0.55, dmgMul:0.50, name:'일반봇' },
+  hard:   { shootInterval:1800, accuracy:0.60, hp:1200, speed:0.70, dmgMul:0.70, name:'강력봇' },
 };
 
 const BOT_NAMES   = ['철갑','화염','냉기','번개','폭풍','어둠','빛의','강철','독침','용사'];
@@ -332,7 +332,7 @@ function checkWin(room, roomCode) {
           const numBots = Math.min(2+room.wave, 8);
           for (let i=0; i<numBots; i++) createBot(roomCode, room.difficulty, room.wave);
           Object.values(room.players).filter(p=>!p.isBot&&p.alive).forEach(p=>{
-            p.hp = Math.min(PLAYER_MAX_HP, p.hp+50);
+            p.hp = Math.min(PLAYER_MAX_HP, p.hp+500);
             io.to(p.id).emit('hpRecovered', { hp:p.hp });
           });
           assignPositions(rooms[roomCode]);

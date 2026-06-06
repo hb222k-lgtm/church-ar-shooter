@@ -187,13 +187,39 @@ function escHtml(s) {
 function drawMini(canvas, c) {
   if (!c) return;
   const ctx = canvas.getContext('2d');
-  const s = 40 / 160;
-  ctx.scale(s, s);
-  // draw simplified character
-  ctx.fillStyle = c.skinColor || '#FDBCB4';
-  ctx.beginPath(); ctx.arc(80, 50, 34, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = c.shirtColor || '#EF4444';
-  ctx.beginPath(); ctx.roundRect(52, 82, 56, 60, 4); ctx.fill();
-  ctx.fillStyle = c.hairColor || '#3D2B1F';
-  ctx.beginPath(); ctx.ellipse(80, 20, 34, 20, 0, Math.PI, Math.PI * 2); ctx.fill();
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(W/2, H/2);
+
+  const body   = c.bodyColor   || c.skinColor  || '#4B6B3A';
+  const turret = c.turretColor || c.hairColor  || '#2A3F1F';
+  const track  = c.trackColor  || c.pantsColor || '#1C1C1C';
+  const accent = c.accentColor || c.shirtColor || '#FBBF24';
+
+  // Scaled-down tank
+  const bw = 14, bh = 18;
+  // Tracks
+  ctx.fillStyle = track;
+  ctx.fillRect(-bw/2 - 3, -bh/2, 3, bh);
+  ctx.fillRect( bw/2,     -bh/2, 3, bh);
+  // Body
+  ctx.fillStyle = body;
+  ctx.fillRect(-bw/2, -bh/2, bw, bh);
+  // Accent stripe
+  ctx.fillStyle = accent;
+  ctx.fillRect(-1, -bh/2 + 2, 2, bh - 4);
+  // Outline
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-bw/2, -bh/2, bw, bh);
+  // Turret
+  ctx.fillStyle = turret;
+  ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.stroke();
+  // Barrel
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(-1, -bh/2 - 7, 2, 8);
+
+  ctx.restore();
 }
