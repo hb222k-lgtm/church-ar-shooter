@@ -23,6 +23,10 @@ const TICK_MS       = 33;    // ~30 Hz
 const PLAYER_MAX_HP = 700;   // base — modified by chassis
 const RESPAWN_MS    = 5000;  // respawn delay in FFA / team modes
 
+/* ─── Map themes ─── */
+const MAP_THEMES = ['default', 'desert', 'snow', 'urban'];
+function pickTheme() { return MAP_THEMES[Math.floor(Math.random()*MAP_THEMES.length)]; }
+
 /* ─── Power-ups ─── */
 const POWERUP_TYPES = {
   health:  { icon:'❤️', name:'체력 회복', color:0xef4444, dur:0,    instant:true  },
@@ -433,6 +437,12 @@ function startGameLoop(roomCode) {
           const shieldOn = p.buffs && p.buffs.shield;
           const finalDmg = shieldOn ? Math.round(b.damage * 0.3) : b.damage;
           p.hp = Math.max(0, p.hp - finalDmg);
+          // Track hit for shooter stats
+          const shooterRef = room.players[b.shooterId];
+          if (shooterRef) {
+            shooterRef.shotsHit  = (shooterRef.shotsHit||0) + 1;
+            shooterRef.dmgDealt  = (shooterRef.dmgDealt||0) + finalDmg;
+          }
           // Bots strafe when hit
           if (p.isBot && p.alive) {
             p.strafeUntil = now + 700 + Math.random()*600;
@@ -442,12 +452,14 @@ function startGameLoop(roomCode) {
           io.to(roomCode).emit('bulletHit', { bulletId:b.id, targetId:p.id, damage:finalDmg, x:b.x, y:b.y });
           if (p.hp <= 0) {
             p.alive = false;
+            p.deaths = (p.deaths||0) + 1;
             p.streak = 0;          // dying resets killstreak
             if (p.buffs) p.buffs = {};  // wipe buffs on death
             const shooter = room.players[b.shooterId];
             if (shooter) {
               shooter.kills++;
               shooter.streak = (shooter.streak||0) + 1;
+              shooter.maxStreak = Math.max(shooter.maxStreak||0, shooter.streak);
               // Killstreak reward?
               const rew = KILLSTREAK_REWARDS[shooter.streak];
               if (rew) {
@@ -497,6 +509,27 @@ function startGameLoop(roomCode) {
 }
 
 /* ─── Win Check ─── */
+function buildStats(room) {
+  return Object.values(room.players).map(p => ({
+    id:p.id, name:p.name, team:p.team, kills:p.kills,
+    deaths: p.deaths||0,
+    shotsFired: p.shotsFired||0,
+    shotsHit: p.shotsHit||0,
+    accuracy: p.shotsFired ? Math.round((p.shotsHit||0)/p.shotsFired*100) : 0,
+    dmgDealt: p.dmgDealt||0,
+    maxStreak: p.maxStreak||0,
+    alive: p.alive, isBot: p.isBot||false,
+  }));
+}
+function pickMVP(stats) {
+  // Score = kills*100 + dmg/10 + maxStreak*30 + accuracy
+  return [...stats].sort((a,b) => {
+    const sa = a.kills*100 + a.dmgDealt/10 + a.maxStreak*30 + a.accuracy;
+    const sb = b.kills*100 + b.dmgDealt/10 + b.maxStreak*30 + b.accuracy;
+    return sb - sa;
+  })[0];
+}
+
 function checkWin(room, roomCode) {
   if (room.status !== 'playing') return;
   const aliveBots   = Object.values(room.players).filter(p => p.isBot  && p.alive);
@@ -506,18 +539,20 @@ function checkWin(room, roomCode) {
     if (aliveHumans.length === 0) {
       room.status = 'ended';
       if (room.gameLoop) clearInterval(room.gameLoop);
+      const stats = buildStats(room);
       io.to(roomCode).emit('gameEnded', {
         mode:'single', victory:false, wave:room.wave,
-        stats:Object.values(room.players).filter(p=>!p.isBot).map(p=>({id:p.id,name:p.name,kills:p.kills})),
+        stats, mvp: pickMVP(stats),
       });
     } else if (aliveBots.length === 0) {
       const total = room.totalWaves||5;
       if (room.wave >= total) {
         room.status = 'ended';
         if (room.gameLoop) clearInterval(room.gameLoop);
+        const stats = buildStats(room);
         io.to(roomCode).emit('gameEnded', {
           mode:'single', victory:true, wave:room.wave,
-          stats:Object.values(room.players).filter(p=>!p.isBot).map(p=>({id:p.id,name:p.name,kills:p.kills})),
+          stats, mvp: pickMVP(stats),
         });
       } else {
         room.wave++;
@@ -544,9 +579,10 @@ function checkWin(room, roomCode) {
     if (top && top.kills >= KILL_GOAL || humans.length === 0) {
       room.status = 'ended';
       if (room.gameLoop) clearInterval(room.gameLoop);
+      const stats = buildStats(room);
       io.to(roomCode).emit('gameEnded', {
         mode:'ffa', winnerId:top?.id||null,
-        stats:Object.values(room.players).map(p=>({id:p.id,name:p.name,kills:p.kills,alive:p.alive})),
+        stats, mvp: pickMVP(stats),
       });
     }
   } else if (room.gameMode === 'team') {
@@ -558,9 +594,10 @@ function checkWin(room, roomCode) {
     if (redK >= TEAM_GOAL || blueK >= TEAM_GOAL) {
       room.status = 'ended';
       if (room.gameLoop) clearInterval(room.gameLoop);
+      const stats = buildStats(room);
       io.to(roomCode).emit('gameEnded', {
         mode:'team', winnerTeam:redK>blueK?'red':'blue',
-        stats:players.map(p=>({id:p.id,name:p.name,team:p.team,kills:p.kills,alive:p.alive})),
+        stats, mvp: pickMVP(stats),
       });
     }
   }
@@ -577,6 +614,7 @@ io.on('connection', (socket) => {
       code, gameMode:'single', status:'waiting', maxPlayers:1,
       host:socket.id, players:{}, teams:{red:[],blue:[]},
       difficulty, wave:1, totalWaves, bullets:[], startedAt:0,
+      theme: pickTheme(),
     };
     socket.join(code); socket.roomCode = code;
     rooms[code].players[socket.id] = {
@@ -593,6 +631,7 @@ io.on('connection', (socket) => {
       players:rooms[code].players, gameMode:'single',
       wave:1, totalWaves, difficulty,
       mapW:GAME_W, mapH:GAME_H, walls:MAP_WALLS,
+      theme: rooms[code].theme,
     });
     setTimeout(() => startGameLoop(code), 1200);
   });
@@ -603,6 +642,7 @@ io.on('connection', (socket) => {
     rooms[code] = {
       code, gameMode:gameMode||'ffa', maxPlayers:maxPlayers||16,
       status:'waiting', host:socket.id, players:{}, teams:{red:[],blue:[]}, bullets:[],
+      theme: pickTheme(),
     };
     addToRoom(socket, code, playerData);
     socket.emit('roomCreated', { code });
@@ -647,6 +687,7 @@ io.on('connection', (socket) => {
     io.to(socket.roomCode).emit('gameStarted', {
       players:room.players, gameMode:room.gameMode,
       mapW:GAME_W, mapH:GAME_H, walls:MAP_WALLS,
+      theme: room.theme,
     });
     setTimeout(() => startGameLoop(socket.roomCode), 1200);
   });
@@ -693,6 +734,7 @@ io.on('connection', (socket) => {
       totalWaves: room.totalWaves||5,
       difficulty: room.difficulty,
       mapW:GAME_W, mapH:GAME_H, walls:MAP_WALLS,
+      theme: room.theme || 'default',
     });
   });
 
@@ -721,6 +763,8 @@ io.on('connection', (socket) => {
     const oy   = shooter.y + Math.sin(sa)*(PLAYER_R+6);
     const dmgBuff = (shooter.buffs && shooter.buffs.damage) ? 2.0 : 1.0;
     const dmgMul = cs.dmgMul * dmgBuff;
+    // Track shots fired (for accuracy stat)
+    shooter.shotsFired = (shooter.shotsFired||0) + 1;
 
     if (cheat) {
       const dmg = Math.max(1, Math.round(w.damage * 0.12 * dmgMul));

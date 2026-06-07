@@ -212,6 +212,26 @@
 <!-- Hit flash -->
 <div id="hit-flash"></div>
 
+<!-- Camera view toggle -->
+<button id="view-btn" title="시점 전환 (V)">📷<br><span style="font-size:9px">시점</span></button>
+<style>
+  #view-btn {
+    position:fixed; bottom:164px; right:24px; z-index:12;
+    width:58px; height:58px; border-radius:50%;
+    background:rgba(30,30,50,0.82); backdrop-filter:blur(6px);
+    border:2px solid rgba(255,255,255,0.25); color:#fff;
+    font-size:18px; font-weight:700; cursor:pointer; padding:0;
+    touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+    transition:transform 0.1s;
+  }
+  #view-btn:active { transform:scale(0.92); }
+  #view-btn.fpv {
+    background:linear-gradient(135deg,#0EA5E9,#6366F1);
+    border-color:rgba(255,255,255,0.5);
+    box-shadow:0 0 18px rgba(99,102,241,0.5);
+  }
+</style>
+
 <!-- Reload button -->
 <button id="reload-btn">재장전</button>
 

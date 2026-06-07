@@ -56,6 +56,23 @@ let myHp = 100, myWeapon = 'pistol', ammo = 12;
 let isReloading = false, lastShot = 0;
 let waveNum = 1, totalWaves = 5;
 let gameState = { players:[], bullets:[], powerups:[] };
+let mapTheme = 'default';
+
+/* ─── Theme palettes ─── */
+const THEMES = {
+  default: { ground:0x232f48, wall:0x4a5470, wallTop:0x6c7896, fog:0x0a0e1a,
+             ambient:0xc8d8ff, sun:0xfff2d0, hemi:[0x6b88c8, 0x2a3548],
+             grid:[0x3a4870, 0x1f2a40], skyColor:0x0a0e1a, name:'기본' },
+  desert:  { ground:0xc4a86b, wall:0x9c7b48, wallTop:0xc09872, fog:0xf0d49a,
+             ambient:0xfff0d0, sun:0xfff4b0, hemi:[0xffe0a0, 0x8b6d3e],
+             grid:[0xa07a3a, 0x6b5328], skyColor:0xf0c878, name:'사막' },
+  snow:    { ground:0xe8eef5, wall:0x8a9bb0, wallTop:0xc0cfde, fog:0xd4dde8,
+             ambient:0xe0eaff, sun:0xffffff, hemi:[0xc8d8f0, 0x6a7e98],
+             grid:[0x9badc8, 0x6b7d96], skyColor:0xc8d4e0, name:'설원' },
+  urban:   { ground:0x3a3d44, wall:0x5a6068, wallTop:0x808890, fog:0x1a1d22,
+             ambient:0xb0bcc8, sun:0xfff2c0, hemi:[0x6a7480, 0x303338],
+             grid:[0x4a5058, 0x252a30], skyColor:0x1a1d22, name:'도시' },
+};
 
 /* ─── Three.js scene ─── */
 const T = {
@@ -86,6 +103,7 @@ window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyR' && !isReloading) startReload();
   if (e.code === 'KeyC') triggerCheat();
+  if (e.code === 'KeyV') toggleView();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
@@ -190,6 +208,23 @@ function startReload() {
 
 document.getElementById('reload-btn').addEventListener('click', startReload);
 document.getElementById('cheat-btn').addEventListener('click', triggerCheat);
+document.getElementById('view-btn').addEventListener('click', toggleView);
+
+/* ─── Camera mode (topdown ↔ fpv) ─── */
+let cameraMode = 'topdown';
+function toggleView() {
+  cameraMode = (cameraMode === 'topdown') ? 'fpv' : 'topdown';
+  const btn = document.getElementById('view-btn');
+  if (cameraMode === 'fpv') {
+    btn.classList.add('fpv');
+    btn.innerHTML = '👁️<br><span style="font-size:9px">1인칭</span>';
+    toast('🎯 1인칭 시점', 1200);
+  } else {
+    btn.classList.remove('fpv');
+    btn.innerHTML = '📷<br><span style="font-size:9px">시점</span>';
+    toast('🗺️ 탑다운', 1200);
+  }
+}
 
 /* ─── HUD ─── */
 function updateAmmoHUD() {
@@ -393,44 +428,59 @@ function init3D() {
   T.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
   T.scene = new THREE.Scene();
-  T.scene.background = new THREE.Color(0x0a0e1a);
-  T.scene.fog = new THREE.Fog(0x0a0e1a, 380, 1800);
-
   T.camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 1, 3500);
 
+  const th = THEMES[mapTheme] || THEMES.default;
+  T.scene.background = new THREE.Color(th.skyColor);
+  T.scene.fog = new THREE.Fog(th.fog, 380, 1800);
+
   // Lights
-  T.ambient = new THREE.AmbientLight(0xc8d8ff, 0.6);
+  T.ambient = new THREE.AmbientLight(th.ambient, 0.6);
   T.scene.add(T.ambient);
-  T.sun = new THREE.DirectionalLight(0xfff2d0, 0.85);
+  T.sun = new THREE.DirectionalLight(th.sun, 0.85);
   T.sun.position.set(400, 600, 200);
   T.scene.add(T.sun);
-  T.scene.add(new THREE.HemisphereLight(0x6b88c8, 0x2a3548, 0.35));
+  T.hemi = new THREE.HemisphereLight(th.hemi[0], th.hemi[1], 0.35);
+  T.scene.add(T.hemi);
 
   // Ground
   const groundGeo = new THREE.PlaneGeometry(mapW, mapH);
-  const groundMat = new THREE.MeshLambertMaterial({ color: 0x232f48 });
+  const groundMat = new THREE.MeshLambertMaterial({ color: th.ground });
   T.ground = new THREE.Mesh(groundGeo, groundMat);
   T.ground.rotation.x = -Math.PI/2;
   T.ground.position.set(mapW/2, 0, mapH/2);
   T.scene.add(T.ground);
 
-  // Grid lines on the floor
-  T.gridHelper = new THREE.GridHelper(Math.max(mapW, mapH)*1.2, 50, 0x3a4870, 0x1f2a40);
+  T.gridHelper = new THREE.GridHelper(Math.max(mapW, mapH)*1.2, 50, th.grid[0], th.grid[1]);
   T.gridHelper.position.set(mapW/2, 0.4, mapH/2);
   T.scene.add(T.gridHelper);
 
-  // Walls
   T.wallGroup = new THREE.Group();
   T.scene.add(T.wallGroup);
   buildWalls();
+}
+
+function applyTheme() {
+  if (!T.scene) return;
+  const th = THEMES[mapTheme] || THEMES.default;
+  T.scene.background = new THREE.Color(th.skyColor);
+  if (T.scene.fog) T.scene.fog.color = new THREE.Color(th.fog);
+  if (T.ambient) T.ambient.color.setHex(th.ambient);
+  if (T.sun)     T.sun.color.setHex(th.sun);
+  if (T.hemi)   { T.hemi.color.setHex(th.hemi[0]); T.hemi.groundColor.setHex(th.hemi[1]); }
+  if (T.ground)  T.ground.material.color.setHex(th.ground);
+  // Rebuild walls (color depends on theme)
+  buildWalls();
+  toast(`🌍 ${th.name} 맵`, 1800);
 }
 
 function buildWalls() {
   if (!T.wallGroup) return;
   while (T.wallGroup.children.length) T.wallGroup.remove(T.wallGroup.children[0]);
   const wlist = walls.length ? walls : MAP_WALLS_FALLBACK;
-  const wallMat = new THREE.MeshLambertMaterial({ color: 0x4a5470 });
-  const topMat  = new THREE.MeshLambertMaterial({ color: 0x6c7896 });
+  const th = THEMES[mapTheme] || THEMES.default;
+  const wallMat = new THREE.MeshLambertMaterial({ color: th.wall });
+  const topMat  = new THREE.MeshLambertMaterial({ color: th.wallTop });
   wlist.forEach(w => {
     const g = new THREE.BoxGeometry(w.w, 36, w.h);
     const m = new THREE.Mesh(g, wallMat);
@@ -837,16 +887,49 @@ function tickEffects(dt) {
 function updateCamera() {
   const me = gameState.players.find(p => p.id===myId);
   if (!me) return;
-  // Angled top-down: high above, slightly behind in +Z (south)
-  const targetX = me.x;
-  const targetZ = me.y;
-  const camY = 250;
-  const camOffsetZ = 140;
-  // Apply screen shake
   const sx = (Math.random()-0.5) * shakeAmt;
   const sy = (Math.random()-0.5) * shakeAmt;
-  T.camera.position.lerp(new THREE.Vector3(targetX + sx, camY, targetZ + camOffsetZ + sy), 0.13);
-  T.camera.lookAt(new THREE.Vector3(targetX, 6, targetZ));
+
+  if (cameraMode === 'fpv' && me.alive) {
+    // First-person: just behind turret, looking down the barrel
+    const useAng = cheatActive ? cheatAngle : me.angle;
+    const fwdX = Math.cos(useAng), fwdZ = Math.sin(useAng);
+    const back = 6;
+    const camHeight = 22;
+    T.camera.position.set(
+      me.x - fwdX*back + sx,
+      camHeight + sy,
+      me.y - fwdZ*back
+    );
+    T.camera.lookAt(
+      me.x + fwdX*200,
+      camHeight - 4,
+      me.y + fwdZ*200
+    );
+    // Hide own tank's hull/turret in FPV so we don't look at the back of our turret
+    const myEntry = T.tanks.get(myId);
+    if (myEntry) {
+      myEntry.hull.visible = false;
+      myEntry.turret.visible = false;
+      myEntry.trackL.visible = false;
+      myEntry.trackR.visible = false;
+      myEntry.label.visible = false;
+    }
+  } else {
+    // Top-down (default)
+    const targetX = me.x, targetZ = me.y;
+    T.camera.position.lerp(new THREE.Vector3(targetX + sx, 250, targetZ + 140 + sy), 0.13);
+    T.camera.lookAt(new THREE.Vector3(targetX, 6, targetZ));
+    // Restore tank visibility
+    const myEntry = T.tanks.get(myId);
+    if (myEntry) {
+      myEntry.hull.visible = true;
+      myEntry.turret.visible = true;
+      myEntry.trackL.visible = true;
+      myEntry.trackR.visible = true;
+      myEntry.label.visible = true;
+    }
+  }
 }
 
 /* ─── Toast ─── */
@@ -901,6 +984,7 @@ socket.on('gameRejoined', data => {
   if (data.walls) walls = data.walls;
   if (data.mapW)  mapW = data.mapW;
   if (data.mapH)  mapH = data.mapH;
+  if (data.theme) mapTheme = data.theme;
 
   const char = JSON.parse(sessionStorage.getItem('char')||'{}');
   const wpn = char.weapon || 'pistol';
@@ -920,9 +1004,9 @@ socket.on('gameRejoined', data => {
     gameMode==='single' ? `총 ${totalWaves} 웨이브` : '모두 전투 태세!',
   );
   document.getElementById('loading-overlay').style.display = 'none';
-  // Build 3D scene now that we know the map size
+  // Build 3D scene now that we know the map size + theme
   init3D();
-  buildWalls();
+  applyTheme();
   gameActive = true;
   if ('ontouchstart' in window) {
     const hint = document.getElementById('touch-hint');
@@ -1129,9 +1213,40 @@ socket.on('gameEnded', data => {
     title.textContent = `${data.winnerTeam==='red'?'🔴 레드':'🔵 블루'} 팀 승리!`;
     title.style.color = data.winnerTeam===myTeam ? '#10B981' : '#EF4444';
   }
-  let html = '<tr><th>이름</th><th>킬</th><th>상태</th></tr>';
+  // MVP card + detailed stats table
+  let html = '';
+  if (data.mvp) {
+    const isMe = data.mvp.id === myId;
+    html += `
+      <tr><td colspan="6" style="padding:14px 0;border:none">
+        <div style="background:linear-gradient(135deg,#FBBF24,#F97316);
+          border-radius:14px;padding:14px;text-align:center;color:#1a1a1a;
+          box-shadow:0 4px 24px rgba(251,191,36,0.4);margin-bottom:12px">
+          <div style="font-size:13px;font-weight:700;opacity:0.85">🏅 MVP</div>
+          <div style="font-size:22px;font-weight:900;margin-top:2px">
+            ${escHtml(data.mvp.name)} ${isMe ? '(나)' : ''}
+          </div>
+          <div style="font-size:12px;margin-top:6px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+            <span>🎯 ${data.mvp.kills}킬</span>
+            <span>💥 ${data.mvp.dmgDealt} 데미지</span>
+            <span>🔥 ${data.mvp.maxStreak}연속킬</span>
+            <span>🎯 정확도 ${data.mvp.accuracy}%</span>
+          </div>
+        </div>
+      </td></tr>
+    `;
+  }
+  html += '<tr><th>이름</th><th>K</th><th>D</th><th>정확도</th><th>최대연킬</th><th>상태</th></tr>';
   (data.stats||[]).sort((a,b)=>b.kills-a.kills).forEach(p => {
-    html += `<tr><td>${escHtml(p.name)}</td><td>${p.kills}</td><td>${p.alive?'✅ 생존':'💀 사망'}</td></tr>`;
+    const me = p.id === myId;
+    html += `<tr style="${me?'background:rgba(16,185,129,0.12)':''}">
+      <td>${escHtml(p.name)}${p.isBot?' 🤖':''}${me?' ⭐':''}</td>
+      <td>${p.kills}</td>
+      <td>${p.deaths||0}</td>
+      <td>${p.accuracy}%</td>
+      <td>${p.maxStreak}</td>
+      <td>${p.alive?'✅':'💀'}</td>
+    </tr>`;
   });
   table.innerHTML = html;
 });
