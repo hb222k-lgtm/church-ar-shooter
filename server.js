@@ -23,6 +23,59 @@ const TICK_MS       = 33;    // ~30 Hz
 const PLAYER_MAX_HP = 700;   // base — modified by chassis
 const RESPAWN_MS    = 5000;  // respawn delay in FFA / team modes
 
+/* ─── Power-ups ─── */
+const POWERUP_TYPES = {
+  health:  { icon:'❤️', name:'체력 회복', color:0xef4444, dur:0,    instant:true  },
+  shield:  { icon:'🛡️', name:'방어막',    color:0x60a5fa, dur:8000, instant:false },
+  speed:   { icon:'⚡', name:'가속',      color:0xfbbf24, dur:8000, instant:false },
+  damage:  { icon:'🔥', name:'데미지×2',  color:0xf97316, dur:8000, instant:false },
+};
+const POWERUP_KEYS = Object.keys(POWERUP_TYPES);
+const POWERUP_SPAWN_INTERVAL = 22000; // ms
+const POWERUP_MAX = 5;
+const POWERUP_RADIUS = 24;
+
+function spawnPowerup(room) {
+  // Find a clear spawn spot
+  for (let tries=0; tries<20; tries++) {
+    const x = 80 + Math.random() * (GAME_W - 160);
+    const y = 80 + Math.random() * (GAME_H - 160);
+    if (collidesWithWalls(x, y, 30)) continue;
+    const type = POWERUP_KEYS[Math.floor(Math.random()*POWERUP_KEYS.length)];
+    room.powerups.push({
+      id: 'pu_' + Math.random().toString(36).substr(2,7),
+      type, x, y, spawnTime: Date.now(),
+    });
+    return;
+  }
+}
+
+/* ─── Killstreak rewards ─── */
+const KILLSTREAK_REWARDS = {
+  3: { name:'자동 회복',    apply: (room, p) => { p.hp = Math.min(p.maxHp, p.hp + 250); } },
+  5: { name:'강철 도금',    apply: (room, p) => { p.buffs.shield = Date.now() + 10000; } },
+  7: { name:'공중 폭격!',   apply: (room, p) => {
+    // Damage all enemies (not teammates)
+    Object.values(room.players).forEach(t => {
+      if (!t.alive || t.id === p.id) return;
+      if (room.gameMode==='team' && t.team === p.team) return;
+      t.hp = Math.max(0, t.hp - 350);
+      if (!t.isBot) io.to(t.id).emit('gotHit', { damage:350, hp:t.hp, shooterId:p.id });
+      io.to(room.code).emit('bulletHit', { bulletId:'airstrike', targetId:t.id, damage:350, x:t.x, y:t.y });
+      if (t.hp <= 0) {
+        t.alive = false; p.kills++;
+        io.to(room.code).emit('playerKilled', {
+          deadId:t.id, killerId:p.id, killerName:p.name, kills:p.kills, x:t.x, y:t.y,
+        });
+        if (room.gameMode === 'ffa' || room.gameMode === 'team') {
+          t.respawnAt = Date.now() + RESPAWN_MS;
+          if (!t.isBot) io.to(t.id).emit('respawnPending', { delay:RESPAWN_MS });
+        }
+      }
+    });
+  } },
+};
+
 /* Chassis stat profiles — chosen so each tank has a real role */
 const CHASSIS_STATS = {
   light:   { hp:500,  speedMul:1.30, dmgMul:0.85, fireMul:0.85 },
@@ -196,6 +249,7 @@ function createBot(roomCode, difficulty, wave) {
     botShootInterval:diff.shootInterval, botDmgMul:diff.dmgMul||0.5,
     nextShoot: Date.now() + Math.random()*diff.shootInterval*2,
     wigPhase: Math.random()*6, strafeUntil:0, strafeDir:1,
+    buffs:{}, streak:0,
   };
   return botId;
 }
@@ -205,8 +259,12 @@ function startGameLoop(roomCode) {
   const room = rooms[roomCode];
   if (!room) return;
   if (room.gameLoop) clearInterval(room.gameLoop);
-  room.bullets = [];
+  room.bullets  = [];
+  room.powerups = [];
+  room.lastPowerupSpawn = Date.now();
   let lastTick = Date.now();
+  // Initial sprinkle of power-ups
+  for (let i=0; i<3; i++) spawnPowerup(room);
 
   room.gameLoop = setInterval(() => {
     if (!rooms[roomCode] || room.status !== 'playing') {
@@ -231,11 +289,50 @@ function startGameLoop(roomCode) {
       });
     }
 
+    /* ── Power-up spawn + pickup ── */
+    if (now - room.lastPowerupSpawn > POWERUP_SPAWN_INTERVAL &&
+        room.powerups.length < POWERUP_MAX) {
+      spawnPowerup(room);
+      room.lastPowerupSpawn = now;
+    }
+    // Pickup detection (only humans pick up — bots get bonus stats already)
+    room.powerups = room.powerups.filter(pu => {
+      for (const pl of players) {
+        if (!pl.alive || pl.isBot) continue;
+        if (Math.hypot(pl.x-pu.x, pl.y-pu.y) < PLAYER_R + POWERUP_RADIUS) {
+          const def = POWERUP_TYPES[pu.type];
+          if (pu.type === 'health') {
+            pl.hp = Math.min(pl.maxHp, pl.hp + 300);
+          } else {
+            pl.buffs[pu.type] = now + def.dur;
+          }
+          io.to(pl.id).emit('powerupCollected', {
+            type:pu.type, dur:def.dur, hp:pl.hp,
+          });
+          io.to(roomCode).emit('powerupGone', { id:pu.id });
+          return false;
+        }
+      }
+      return true;
+    });
+
+    /* ── Expire buffs ── */
+    players.forEach(p => {
+      if (!p.buffs) return;
+      for (const k in p.buffs) {
+        if (p.buffs[k] && now >= p.buffs[k]) {
+          delete p.buffs[k];
+          if (!p.isBot) io.to(p.id).emit('powerupExpired', { type:k });
+        }
+      }
+    });
+
     /* ── Human movement ── */
     players.forEach(p => {
       if (p.isBot || !p.alive) return;
       if (p.vx || p.vy) {
-        const spd = PLAYER_SPEED * getChassisStats(p).speedMul;
+        const speedBuff = (p.buffs && p.buffs.speed) ? 1.6 : 1;
+        const spd = PLAYER_SPEED * getChassisStats(p).speedMul * speedBuff;
         const nx = p.x + p.vx * spd * dt;
         const ny = p.y + p.vy * spd * dt;
         if (!collidesWithWalls(nx, p.y, PLAYER_R)) p.x = nx;
@@ -332,24 +429,41 @@ function startGameLoop(roomCode) {
         if (p.id === b.shooterId || !p.alive) continue;
         if (room.gameMode==='team' && room.players[b.shooterId]?.team === p.team && p.team) continue;
         if (Math.hypot(p.x-b.x, p.y-b.y) < PLAYER_R+BULLET_R) {
-          p.hp = Math.max(0, p.hp - b.damage);
+          // Shield buff reduces damage by 70%
+          const shieldOn = p.buffs && p.buffs.shield;
+          const finalDmg = shieldOn ? Math.round(b.damage * 0.3) : b.damage;
+          p.hp = Math.max(0, p.hp - finalDmg);
           // Bots strafe when hit
           if (p.isBot && p.alive) {
             p.strafeUntil = now + 700 + Math.random()*600;
             p.strafeDir = Math.random()<0.5 ? 1 : -1;
           }
-          if (!p.isBot) io.to(p.id).emit('gotHit', { damage:b.damage, hp:p.hp, shooterId:b.shooterId });
-          io.to(roomCode).emit('bulletHit', { bulletId:b.id, targetId:p.id, damage:b.damage, x:b.x, y:b.y });
+          if (!p.isBot) io.to(p.id).emit('gotHit', { damage:finalDmg, hp:p.hp, shooterId:b.shooterId, shielded:shieldOn });
+          io.to(roomCode).emit('bulletHit', { bulletId:b.id, targetId:p.id, damage:finalDmg, x:b.x, y:b.y });
           if (p.hp <= 0) {
             p.alive = false;
+            p.streak = 0;          // dying resets killstreak
+            if (p.buffs) p.buffs = {};  // wipe buffs on death
             const shooter = room.players[b.shooterId];
-            if (shooter) shooter.kills++;
+            if (shooter) {
+              shooter.kills++;
+              shooter.streak = (shooter.streak||0) + 1;
+              // Killstreak reward?
+              const rew = KILLSTREAK_REWARDS[shooter.streak];
+              if (rew) {
+                rew.apply(room, shooter);
+                if (!shooter.isBot) {
+                  io.to(shooter.id).emit('killstreak', {
+                    streak: shooter.streak, name: rew.name,
+                  });
+                }
+              }
+            }
             io.to(roomCode).emit('playerKilled', {
               deadId:p.id, killerId:b.shooterId,
               killerName:shooter?.name||'?', kills:shooter?.kills||0,
               x:p.x, y:p.y,
             });
-            // Schedule respawn for FFA/team modes
             if (room.gameMode === 'ffa' || room.gameMode === 'team') {
               p.respawnAt = now + RESPAWN_MS;
               if (!p.isBot) io.to(p.id).emit('respawnPending', { delay:RESPAWN_MS });
@@ -367,12 +481,16 @@ function startGameLoop(roomCode) {
       players: players.map(p => ({
         id:p.id, x:p.x, y:p.y, angle:p.angle||0,
         hp:p.hp, maxHp:p.maxHp||(p.isBot?100:PLAYER_MAX_HP),
-        alive:p.alive, kills:p.kills,
+        alive:p.alive, kills:p.kills, streak:p.streak||0,
         name:p.name, team:p.team, isBot:p.isBot,
         character:p.character,
+        buffs: p.buffs ? Object.keys(p.buffs) : [],
       })),
       bullets: room.bullets.map(b => ({
         id:b.id, x:b.x, y:b.y, weapon:b.weapon, shooterId:b.shooterId,
+      })),
+      powerups: (room.powerups||[]).map(pu => ({
+        id:pu.id, type:pu.type, x:pu.x, y:pu.y,
       })),
     });
   }, TICK_MS);
@@ -463,7 +581,7 @@ io.on('connection', (socket) => {
     socket.join(code); socket.roomCode = code;
     rooms[code].players[socket.id] = {
       id:socket.id, ...playerData,
-      team:null, hp:PLAYER_MAX_HP, alive:true, kills:0, x:0, y:0, vx:0, vy:0, angle:0,
+      team:null, hp:PLAYER_MAX_HP, alive:true, kills:0, x:0, y:0, vx:0, vy:0, angle:0, buffs:{}, streak:0,
     };
     const numBots = difficulty==='easy'?3 : difficulty==='normal'?4 : 5;
     for (let i=0; i<numBots; i++) createBot(code, difficulty, 1);
@@ -510,7 +628,7 @@ io.on('connection', (socket) => {
     }
     room.players[socket.id] = {
       id:socket.id, ...playerData, team,
-      hp:PLAYER_MAX_HP, alive:true, kills:0, x:0, y:0, vx:0, vy:0, angle:0,
+      hp:PLAYER_MAX_HP, alive:true, kills:0, x:0, y:0, vx:0, vy:0, angle:0, buffs:{}, streak:0,
     };
     socket.emit('joinedRoom', {
       playerId:socket.id, room:getRoomPublic(room), myTeam:team, isHost:room.host===socket.id,
@@ -563,7 +681,7 @@ io.on('connection', (socket) => {
       room.players[socket.id] = {
         id:socket.id, ...(playerData||{}), team,
         hp:PLAYER_MAX_HP, maxHp:PLAYER_MAX_HP, alive:true, kills:0,
-        x:sp.x, y:sp.y, vx:0, vy:0, angle:0,
+        x:sp.x, y:sp.y, vx:0, vy:0, angle:0, buffs:{}, streak:0,
       };
     }
 
@@ -601,7 +719,8 @@ io.on('connection', (socket) => {
     const sa   = angle ?? shooter.angle;
     const ox   = shooter.x + Math.cos(sa)*(PLAYER_R+6);
     const oy   = shooter.y + Math.sin(sa)*(PLAYER_R+6);
-    const dmgMul = cs.dmgMul;
+    const dmgBuff = (shooter.buffs && shooter.buffs.damage) ? 2.0 : 1.0;
+    const dmgMul = cs.dmgMul * dmgBuff;
 
     if (cheat) {
       const dmg = Math.max(1, Math.round(w.damage * 0.12 * dmgMul));

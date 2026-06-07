@@ -137,8 +137,12 @@
 </head>
 <body>
 
-<!-- Main game canvas -->
-<canvas id="game-canvas"></canvas>
+<!-- 3D world (Three.js) -->
+<canvas id="three-canvas" style="position:fixed;inset:0;width:100%;height:100%;display:block;background:#0a0e1a;touch-action:none"></canvas>
+<!-- 2D HUD overlay (minimap, joystick, crosshair, kill-feed live here) -->
+<canvas id="game-canvas" style="position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;background:transparent"></canvas>
+<!-- Touch listener catcher (covers screen, doesn't paint) -->
+<div id="touch-catcher" style="position:fixed;inset:0;z-index:1;touch-action:none"></div>
 
 <!-- Loading screen (shown until game connects) -->
 <div id="loading-overlay">
@@ -175,6 +179,32 @@
   <span style="color:rgba(255,255,255,0.35);margin:0 8px">/ 20</span>
   <span style="color:#3B82F6">🔵 <span id="blue-count">0</span></span>
 </div>
+
+<!-- Active power-up indicator -->
+<div id="powerup-active" style="display:none;position:fixed;top:62px;left:14px;z-index:9;
+  background:linear-gradient(135deg,rgba(124,58,237,0.85),rgba(236,72,153,0.85));
+  backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.25);border-radius:14px;
+  padding:6px 14px;color:#fff;font-size:13px;font-weight:700;
+  box-shadow:0 0 18px rgba(236,72,153,0.5)">
+  <span id="pw-icon">⚡</span> <span id="pw-name">부스트</span> <span id="pw-timer" style="opacity:0.7">5s</span>
+</div>
+
+<!-- Killstreak banner -->
+<div id="killstreak-banner" style="display:none;position:fixed;top:50%;left:50%;
+  transform:translate(-50%,-50%);z-index:30;pointer-events:none;text-align:center;
+  animation:streakPop 0.6s ease">
+  <div id="ks-streak" style="font-size:54px;font-weight:900;color:#FBBF24;
+    text-shadow:0 0 30px rgba(251,191,36,0.9),0 4px 8px rgba(0,0,0,0.7)">3 KILLS</div>
+  <div id="ks-reward" style="font-size:18px;color:#fff;font-weight:700;margin-top:4px;
+    text-shadow:0 2px 8px rgba(0,0,0,0.8)">자동 회복!</div>
+</div>
+<style>
+  @keyframes streakPop {
+    0%   { transform:translate(-50%,-50%) scale(0.4); opacity:0; }
+    40%  { transform:translate(-50%,-50%) scale(1.15); opacity:1; }
+    100% { transform:translate(-50%,-50%) scale(1); opacity:1; }
+  }
+</style>
 
 <!-- Kill feed -->
 <div id="kill-feed"></div>
@@ -259,6 +289,7 @@
 
 <div id="toast-container"></div>
 <script src="/socket.io/socket.io.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>
